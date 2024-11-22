@@ -1,0 +1,7 @@
+\babel@toc {ngerman}{}\relax 
+\babel@toc {english}{}\relax 
+\contentsline {chapter}{\numberline {1}Some Helpful Remarks}{5}{chapter.1}%
+\contentsline {section}{\numberline {1.1}On Citations}{5}{section.1.1}%
+\contentsline {section}{\numberline {1.2}Math Symbols}{7}{section.1.2}%
+\babel@toc {ngerman}{}\relax 
+\providecommand \tocbasic@end@toc@file {}\tocbasic@end@toc@file 

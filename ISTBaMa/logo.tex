@@ -1,0 +1,67 @@
+\documentclass[ngerman,paper=a5]{scrbook}
+\usepackage[utf8]{inputenc}
+\usepackage[sc,osf]{mathpazo}
+%\usepackage{lmodern}   % standard latex schrift
+%\usepackage{tgpagella} % alternative Palatino Schriftart
+\usepackage[T1]{fontenc}
+
+\usepackage{babel}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+%\usepackage{multicol}
+%\usepackage{lscape}
+\usepackage{varioref}
+\usepackage{cite}
+\usepackage{listings}           % nicely formated code
+\lstset{language=R,basicstyle=\ttfamily,frame=top}
+%\usepackage{icomma}
+%
+\usepackage{caption}
+\usepackage{tikz}
+%\usetikzlibrary{shapes}
+\usetikzlibrary{calc}
+
+%\usepackage{feynmp}
+\selectlanguage{ngerman}
+\usepackage[expansion=false]{microtype}
+\flushbottom
+\frenchspacing
+
+\setcapindent{0em}
+\addtokomafont{captionlabel}{\bfseries}
+%\addtokomafont{sectionlabel}{\bfseries}
+
+\graphicspath{{figures/}}
+\renewcommand{\theenumi}{\alph{enumi})}
+\renewcommand{\labelenumi}{\theenumi}
+
+\newcommand{\T}{\text{T}}
+\newcommand{\pd}[2]{\ensuremath{\frac{\partial #1}{\partial #2}}}
+
+\begin{document}
+\begin{tikzpicture}[rotate=45]
+  \def\shift{0.8mm}
+  \def\stretch{0.1mm}
+  \def\p{0.9}
+%
+  \coordinate (xstretch) at (\stretch,0);
+  \coordinate (ystretch) at (0,\stretch);
+  \foreach \ysign in {-1,1}{
+    \foreach \n [count=\j from 0] in {7,6,6,5,4,3,2,0}{
+      \foreach \xsign in {-1,1}{
+        \foreach \i in {0,...,\n}{
+          \coordinate (x) at (\xsign*\i*\shift,\ysign*\j*\shift);
+%          \fill ($ (x) + {\xsign*((sqrt(\i)) + (sqrt(\j)))*\i}*(xstretch) + {\ysign*(sqrt(\j) + sqrt(\i))*\j}*(ystretch) $) ++(-1pt,-1pt) rectangle +(2pt,2pt);
+          \fill ($ (x) + {\xsign*((sqrt(\i)) + (sqrt(\j)))*\i}*(xstretch) + {\ysign*(sqrt(\j) + sqrt(\i))*\j}*(ystretch) $) ++(-1pt,-1pt) rectangle +(2pt,2pt);
+%          \pgfmathparse{veclen(\xsign*\i*\shift,\ysign*\j*\shift)};
+%          \def\nx{\pgfmathresult}
+%          \fill ($ (x) + {(pow((pow(\i,\p) + pow(\j,\p)),1/\p))*\stretch/(\nx>0?\nx:1)}*(x) $) 
+%                 ++(-1pt,-1pt) rectangle +(2pt,2pt); % the small rectangle
+        }
+      }
+    }
+  }
+\end{tikzpicture}
+
+\end{document}
