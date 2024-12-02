@@ -1,7 +1,7 @@
-function [X,U,S,J,X_hat_OL,X_bar_OL,V_OL,S_OL,J_wc,time,Theta_HC_t]=RALMPC_Online(x0,SS,Q_func,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,K,F,G,d_bar,L_B,c_max,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,Ts,numberitertions)
+function [X,U,S,J,X_hat_OL,X_bar_OL,V_OL,S_OL,J_wc,time,Theta_HC_t]=RALMPC_Online(x0,SS,Q_func,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,K,F,G,d_bar,L_B,c_max,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,Ts,numberitertions,disturbance_deter)
 options = optimset('Display','none',...
     'TolFun', 1e-8,...
-    'MaxIter', 10000,...
+    'MaxIter', 100,...
     'TolConSQP', 1e-6);
 %Compute the neceassary system matricis
 A_cl_0=A_0+B_0*K;
@@ -61,7 +61,7 @@ for h=1:numberitertions
         x_tminus=xmeasure;
         u_tminus=v_OL(:,1)+K*xmeasure;
         %Simulate the uncertain system
-        xmeasure=dynamic(x_tminus,u_tminus,A_star,B_star,W_V);
+        xmeasure=dynamic(x_tminus,u_tminus,A_star,B_star,W_V,disturbance_deter);
         %Compute cost function
         J_array=J_array+x_tminus'*Q*x_tminus+u_tminus'*R*u_tminus;
         %Check termination condition
@@ -116,10 +116,15 @@ function terminate=check_terminalcondition(x,s,c_max,H)
     end    
 end
 
-function x_tplus=dynamic(x_t,u_t,A_star,B_star,W_V)
+function x_tplus=dynamic(x_t,u_t,A_star,B_star,W_V,disturbance_deter)
 %This function simulates the system dynamics with the disturbance
     w = W_V(1,:)';
-    x_tplus=A_star*x_t+B_star*u_t+(1-2*rand)*w;
+    if disturbance_deter
+        disturbance=w*0.5;
+    else
+        disturbance=(1-2*rand)*w;
+    end
+    x_tplus=A_star*x_t+B_star*u_t+disturbance;
 end
 
 function [theta_bar_t,eta_t,Theta_HC_t,Delta]=get_updatehypercube(xmeasure,x_tminus,u_tminus,theta_bar_t,eta_t,Theta_HC0,Theta_HC_t,Delta,H_w,h_w,A_0,A_1,A_2,B_0,B_1,B_2,p,B_p,options)

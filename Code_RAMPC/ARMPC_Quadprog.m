@@ -96,7 +96,7 @@ b_eq=[b_eq;zeros(N*n,1)];
 A_eq_theta_hat_1=[A_eq_theta_hat_1;zeros(N*n,y_length)];
 A_eq_theta_hat_2=[A_eq_theta_hat_2;zeros(N*n,y_length)];
 %
-%dynamics LMS pint estimate
+%dynamics LMS point estimate
 for k=0:N-1 
 A_eq=[A_eq;...
     zeros(n,n*(N+1)),zeros(n,k*n),A_cl_0,-eye(n),zeros(n,(N-k-1)*n),zeros(n,k*m),B_0,zeros(n,(N-k-1)*m),zeros(n,N+1)];
@@ -240,7 +240,7 @@ for ii = 1:MPCiterations
     end
     
     % Find $\Theta_t$
-    Theta_t_M = Theta;
+    Theta_t_M = Theta; %%%%!!!!!!!!!!!!!Fehler 
     for i = 0:(M-1)
         eval(['Set = Delta_' num2str(i) ';']);
         Theta_t_M = Theta_t_M & Set;
@@ -477,7 +477,7 @@ end
     A_K = A_rho + B_rho*K;
     c_0=size(Hx,1);
     for i = 1:c_0
-        [~,fval] = linprog(-Hx(i,:)*A_K, Hx, ones(c_0,1),[],[],[],[],[],options);
+        [~,fval] = linprog(-Hx(i,:)*A_K, Hx, ones(c_0,1),[],[],[],[],options);
         array_rho = [array_rho; -fval];
     end
     rho = max(array_rho);

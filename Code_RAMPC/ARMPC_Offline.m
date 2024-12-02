@@ -38,8 +38,9 @@ disturbances = 0.2;
 
 p1_unc = par_uncertainty*(spring/mass);
 p2_unc = par_uncertainty*(damper/mass);
-w_max = T_s*disturbances; 
+w_max = T_s/m*disturbances; 
 %disturbance set 
+
 W_V=[[0,w_max];[0,-w_max]];
 W=Polyhedron(W_V);
 H_w = [0 ,1;0,-1;1,0;-1,0];
@@ -52,7 +53,7 @@ Theta = Polyhedron(H_p,h_p);
 HB_p = [1 0 0; -1 0 0; 0 1 0; 0 -1 0; 0 0 1; 0 0 -1];
 hB_p = 0.5*[1;1;1;1;1;1];
 B_p = Polyhedron(HB_p,hB_p);
-%% System matrices
+%% System matrices + Euler discretization
 A_0 = [1 T_s; -T_s*spring/mass 1-T_s*damper/mass];
 A_1 = p1_unc*[0 0; T_s 0];
 A_2 = p2_unc*[0 0; 0 T_s];
@@ -60,12 +61,11 @@ B_0 = [0; T_s/mass];
 B_1 = zeros(n,m);
 B_2 = zeros(n,m);
 %% Costs
-Q = [1 0; 0 1e-2]; %1
-%Q=eye(2);
+Q = [1 0; 0 1e-2]; 
 R = 1e-1;
-%% start time
+%% Start time
 t_start = tic;
-%% solve for P and K
+%% Solve for P and K (Assumption 2)
 rho_PK = 0.75; %set contraction rate \in[0,1) (hyperparameter), see [https://github.com/Gedlex/nonlinear-robust-MPC/tree/main] for automatic choice
 [P,K] = get_PK_LMIs(Q,R,Theta,rho_PK,A_0,A_1,A_2,B_0,B_1,B_2);
 %% A_K matrices at vertices of $\Theta$
@@ -73,7 +73,7 @@ for i = 1:2^p
     vert_Theta = Theta.V(i,:)';
     eval(['A_K' num2str(i) '=getA_K_full(vert_Theta,K,A_0,A_1,A_2,B_0,B_1,B_2);']);
 end 
-%% Compute set X_0 as rho contractive
+%% Compute set X_0 as rho contractive. Compute the set P
 rho = rho_PK; 
 % symmetric constraints to build X_0
 x_1max_symm = -x_1min;
@@ -91,14 +91,14 @@ X_0.minVRep;
 Hx = X_0.A;
 hx = X_0.b;
 c_0 = length(Hx(:,1));
-% normalize constraints
+% normalize constraints 
 for i = 1:c_0
     Hx(i,:) = Hx(i,:)/hx(i);
     hx(i) = 1;
 end
 % Plot X_0's verteces and compute max x2 in X_0 just to plot it decently later
 X0_2max = -Inf;
-%% plot cotnractive set used for tbe
+%% Plot contractive set used for tbe
 figure(1);
 plot(X_0)
 vert_X_0=con2vert(X_0.A,X_0.b);%converts to vertex representation 
@@ -111,14 +111,14 @@ for l = 1:length(Hx(:,1))
     end
 end
 
-%% compute constants for robust MPC
+%% Compute constants for robust MPC
 %rho_0
 array_rho = [];
 [A_rho,B_rho] = getAB(zeros(p,1),A_0,A_1,A_2,B_0,B_1,B_2);
 A_K = A_rho + B_rho*K;
 for i = 1:c_0
-    [~,fval] = linprog(-Hx(i,:)*A_K, Hx, ones(size(Hx,1),1),[],[],[],[],[],options);
-    array_rho = [array_rho; -fval];
+    [~,fval] = linprog(-Hx(i,:)*A_K, Hx, ones(size(Hx,1),1),[],[],[],[],options);
+    array_rho = [array_rho; -f  val];
 end
 rho_0 = max(array_rho);
 % L_theta_0
@@ -127,7 +127,7 @@ for j = 1:(2^p)
     [A_Lj,B_Lj] = getABunc(Theta.V(j,:),A_1,A_2,B_1,B_2);
     A_K = A_Lj + B_Lj*K;
     for i = 1:c_0
-        [~,fval] = linprog(-Hx(i,:)*A_K, Hx, ones(size(Hx,1),1),[],[],[],[],[],options);
+        [~,fval] = linprog(-Hx(i,:)*A_K, Hx, ones(size(Hx,1),1),[],[],[],[],options);
         array_L_theta = [array_L_theta; -fval];
     end
 end
@@ -150,6 +150,7 @@ cmax = max(c_j);
 %    [~,temp]=linprog(-F(j,:)-G(j,:)*K,Hx,ones(size(Hx,1),1));
 %   c_j_2=[c_j_2;-temp]; 
 %end
+
 % dbar
 array_dbar = [];
 for i = 1:(n)

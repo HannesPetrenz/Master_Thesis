@@ -1,4 +1,4 @@
-function [X_hat_OL,X_bar_OL,V_OL,S_OL,J_wc,X,U,time,eta_t,rho_theta_t,theta_bar_t,theta_hat_t,Theta_HC_t]=solve_RAMPC(x0,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,P,K,F,G,d_bar,L_B,c_max,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,Ts)
+function [X_hat_OL,X_bar_OL,V_OL,S_OL,J,X,U,time,Theta_HC_t]=solve_RAMPC(x0,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,P,K,F,G,d_bar,L_B,c_max,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,Ts,adpation,disturbance_deter)
 options = optimset('Display','none',...
     'TolFun', 1e-8,...
     'MaxIter', 10000,...
@@ -31,10 +31,11 @@ time=[];
 X=[];
 U=[];
 S=[];
+J=0;
 %MPC iteration loop
-while terminate
+while t<20
     %Set membership estimation and Point estimation
-    if t>0
+    if t>0 && adpation
        %Update Theta_HC_t
        [theta_bar_t,eta_t,Theta_HC_t,Delta]=get_updatehypercube(xmeasure,x_tminus,u_tminus,theta_bar_t,eta_t,Theta_HC0,Theta_HC_t,Delta,H_w,h_w,A_0,A_1,A_2,B_0,B_1,B_2,p,B_p,options); 
        %Update theta_hat_t
@@ -69,8 +70,9 @@ while terminate
         J_wc{t+1}=get_worstcasecosttogo(X_hat_OL{end},S_OL{end},V_OL{end},H,P,Q,R,K);
     x_tminus=X(:,end);
     u_tminus=U(:,end);
+    J=J+x_tminus'*Q*x_tminus+u_tminus'*R*u_tminus;
     %Simulate the uncertain system
-    xmeasure=dynamic(X(:,end),U(end),A_star,B_star,W_V);
+    xmeasure=dynamic(X(:,end),U(end),A_star,B_star,W_V,disturbance_deter);
     %Check termination condition
     terminate=check_terminalcondition(X(:,end),S(end),c_max,H);
     if exitflag==-2
@@ -110,10 +112,15 @@ function [A_eqt,b_eqt,A_ineqt,b_ineqt]=get_currentConstraints(eta,rho,theta_bar,
     b_ineqt=b_ineq;
 end
 
-function x_tplus=dynamic(x_t,u_t,A_star,B_star,W_V)
+function x_tplus=dynamic(x_t,u_t,A_star,B_star,W_V,disturbance_deter)
 %This function simulates the system dynamics with the disturbance
     w = W_V(1,:)';
-    x_tplus=A_star*x_t+B_star*u_t+(1-2*rand)*w;
+    if disturbance_deter
+        disturbance=w*0.5;
+    else
+        disturbance=(1-2*rand)*w;
+    end
+    x_tplus=A_star*x_t+B_star*u_t+disturbance;
 end
 
 
@@ -197,7 +204,7 @@ function H_cost=getcost(Q,R,K,P,n,N)
     %Zeros for s
     H_cost=blkdiag(H_cost,zeros(N+1));
     H_cost=2*H_cost; %Since we solve the problem min 0.5*y'*H*y
-    end
+ end
     
 function D=get_D(x,u,A_1,A_2,B_1,B_2)
     D = [A_1*x + B_1*u, A_2*x + B_2*u];

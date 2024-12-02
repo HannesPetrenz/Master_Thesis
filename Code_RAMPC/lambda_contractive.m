@@ -1,5 +1,5 @@
 function [X_0] = lambda_contractive(lambda,F,G,A_K1,A_K2,A_K3,A_K4,K)
-%compute lambda contractive set
+%compute    
 options = optimset('Display','off');
 
 L = F + G*K;    % The constrait set matrix for the state, in closed loop
@@ -15,12 +15,12 @@ while(notFinished)
         eval(['A_K=A_K' num2str(j) '/lambda;']);
         if nu == 0
             for i = 1:p
-                [~,fval] = linprog(-V(end-p+i,:)*A_K, V, ones(size(V,1),1),[],[],[],[],[],options);
+                [~,fval] = linprog(-V(end-p+i,:)*A_K, V, ones(size(V,1),1),[],[],[],[],options);
                 fmax = max(-fval-1, fmax);
             end
         elseif nu > 0
             for i = 1:p*4
-                [~,fval] = linprog(-V(end-p*4+i,:)*A_K, V, ones(size(V,1),1),[],[],[],[],[],options);
+                [~,fval] = linprog(-V(end-p*4+i,:)*A_K, V, ones(size(V,1),1),[],[],[],[],options);
                 fmax = max(-fval-1, fmax);
             end    
         end

@@ -1,8 +1,8 @@
-function [X,U,S,J,X_hat_OL,X_bar_OL,V_OL,S_OL,J_wc,time,Theta_HC_t]=RALMPC_Convex_Online(x0,SS,Q_func,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,K,F,G,d_bar,L_B,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,Ts,numberitertions)
+function [X,U,S,J,X_hat_OL,X_bar_OL,V_OL,S_OL,J_wc,time,Theta_HC_t]=RALMPC_Convex_Online(x0,SS,Q_func,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,K,F,G,d_bar,L_B,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,Ts,numberitertions,adaption,disturbance_deter)
 options = optimset('Display','none',...
-    'TolFun', 1e-8,...
-    'MaxIter', 100,...
-    'TolConSQP', 1e-6);
+    'TolFun', 1e-10,...
+    'MaxIter', 1000,...
+    'TolConSQP', 1e-8);
 %Compute the neceassary system matricis
 A_cl_0=A_0+B_0*K;
 A_cl_theta1=A_1+B_1*K;
@@ -10,9 +10,9 @@ A_cl_theta2=A_2+B_2*K;
 %Build the constraints for y=[x_bar;x_hat;v;s;s_tilde;lamda]
 %size=n*(N+1)+n*(N+1)+m*N+(N+1)+1+L
 L=size(Q_func,2);
-[A_eq,b_eq,A_eq_theta1_bar,A_eq_theta2_bar,A_eq_theta1_hat,A_eq_theta2_hat,A_ineq,b_ineq,A_ineq_eta,A_ineq_rho]=get_constraints(x0,A_cl_0,B_0,B_1,B_2,A_cl_theta1,A_cl_theta2,F,G,K,c,L_B,d_bar,H,B_p,n,m,N,p);
+[A_eq,b_eq,A_eq_theta1_bar,A_eq_theta2_bar,A_eq_theta1_hat,A_eq_theta2_hat,A_ineq,b_ineq,A_ineq_eta,A_ineq_rho]=get_constraints(x0,A_cl_0,B_0,B_1,B_2,A_cl_theta1,A_cl_theta2,F,G,K,c,L_B,d_bar,H,B_p,n,m,N,p,L);
 %Cost H
-H_cost=getcost(Q,R,K,Q_func,n,N,m);
+H_cost_base=getcost(Q,R,K,n,N,m,L);
 %initial guess
 y_init=[zeros(2*(N+1)*n+N*m,1)];
 for k=0:N-1
@@ -32,9 +32,10 @@ for h=1:numberitertions
     S_array=[];
     J_array=0;
     xmeasure = x0;
+    tic
     while t<20
         %Set membership estimation and Point estimation
-        if t>0
+        if t>0 && adaption
            %Update Theta_HC_t
            [theta_bar_t,eta_t,Theta_HC_t,Delta]=get_updatehypercube(xmeasure,x_tminus,u_tminus,theta_bar_t,eta_t,Theta_HC0,Theta_HC_t,Delta,H_w,h_w,A_0,A_1,A_2,B_0,B_1,B_2,p,B_p,options); 
            %Update theta_hat_t
@@ -44,18 +45,32 @@ for h=1:numberitertions
         end
         %Optimize 
         %Update the constraints with the updated parameter
-        [A_eqt,b_eqt,A_ineqt,b_ineqt]=get_currentConstraints(xmeasure,eta_t,rho_theta_t,theta_bar_t,theta_hat_t,A_eq,b_eq,A_eq_theta1_bar,A_eq_theta2_bar,A_eq_theta1_hat,A_eq_theta2_hat,A_ineq,b_ineq,A_ineq_eta,A_ineq_rho,L,n,N);
+        [A_eqt,b_eqt,A_ineqt,b_ineqt]=get_currentConstraints(SS,xmeasure,eta_t,rho_theta_t,theta_bar_t,theta_hat_t,A_eq,b_eq,A_eq_theta1_bar,A_eq_theta2_bar,A_eq_theta1_hat,A_eq_theta2_hat,A_ineq,b_ineq,A_ineq_eta,A_ineq_rho,H,L,n,N);
         %Update cost function
-        f_cost=get_updateCost(Q_func,n,m,N);
+        [f_cost,H_cost]=get_updateCost(Q_func,n,m,N,H_cost_base,L);
         %Optimize the quadratic programm 
-        [y_OL,V,exitflag] = quadprog(H_cost,f_cost,A_ineqt,b_ineqt,A_eqt,b_eqt,[],[],y_init,options);
+        if t>0 && h>1
+            y_init=Y_OL{t};
+        elseif t>0 && h==1
+            y=Y_OL{end};
+            y_init=[y(n+1:n*(N+1),1);zeros(n,1);y(n*(N+2)+1:2*n*(N+1),1);zeros(n,1);y(2*n*(N+1)+m+1:2*n*(N+1)+m*(N),1);zeros(m,1);y(2*n*(N+1)+m*N+2:2*n*(N+1)+m*N+N+1,1);0;y(2*n*(N+1)+m*N+N+2);y(2*n*(N+1)+m*N+N+3:end)];
+        else
+           for k=0:N-1
+                y_init=[y_init;(1-(rho_theta0+eta_0*L_B)^k)/(1-(rho_theta0+eta_0*L_B))*d_bar];
+           end 
+        end
+        lb=[-inf*ones(n*(N+1)+n*(N+1)+m*N+(N+1)+1,1);zeros(L,1)];
+        ub=[inf*ones(n*(N+1)+n*(N+1)+m*N+(N+1)+1,1);ones(L,1)];
+        [y_OL,V,exitflag] = quadprog(H_cost,f_cost,A_ineqt,b_ineqt,A_eqt,b_eqt,lb,ub,y_init,options);
         %Extract the open loop solution
         x_bar_OL = reshape(y_OL(1:2*(N+1))',n,[]);
         x_hat_OL=reshape(y_OL(n*(N+1)+1:2*n*(N+1)),n,[]);
         v_OL=reshape(y_OL(2*(N+1)*n+1:2*(N+1)*n+m*N),m,[]);
-        s_OL=y_OL(2*(N+1)*n+m*N+1:end-1);
-        J=V+P; 
+        s_OL=y_OL(2*(N+1)*n+m*N+1:2*(N+1)*n+m*N+N+1);
+        lambda=y_OL(2*(N+1)*n+m*N+N+3:end);
+        Q_wc=f_cost'*y_OL; 
         %Store the data
+        Y_OL{t+1}=y_OL;
         time_array=[time_array;t];
         X_array=[X_array,xmeasure];
         U_array=[U_array,v_OL(1,:)+K*xmeasure];
@@ -69,12 +84,15 @@ for h=1:numberitertions
         x_tminus=xmeasure;
         u_tminus=v_OL(:,1)+K*xmeasure;
         %Simulate the uncertain system
-        xmeasure=dynamic(x_tminus,u_tminus,A_star,B_star,W_V);
+        xmeasure=dynamic(x_tminus,u_tminus,A_star,B_star,W_V,disturbance_deter);
         %Compute cost function
         J_array=J_array+x_tminus'*Q*x_tminus+u_tminus'*R*u_tminus;
         %Update time
         disp(t)
         t=t+1;
+        if exitflag==-2
+            error('Problem is infeasible')
+        end
     end
     %Compute the real time
     time_array=(time_array-1)./Ts;
@@ -107,10 +125,15 @@ function [A,B]=get_systemmatrix(p,A_0,A_1,A_2,B_0,B_1,B_2)
 end
 
 
-function x_tplus=dynamic(x_t,u_t,A_star,B_star,W_V)
+function x_tplus=dynamic(x_t,u_t,A_star,B_star,W_V,disturbance_deter)
 %This function simulates the system dynamics with the disturbance
     w = W_V(1,:)';
-    x_tplus=A_star*x_t+B_star*u_t+0.5*w;%(1-2*rand)*w;
+    if disturbance_deter
+        disturbance=w*0.5;
+    else
+        disturbance=(1-2*rand)*w;
+    end
+    x_tplus=A_star*x_t+B_star*u_t+disturbance;
 end
 
 function [theta_bar_t,eta_t,Theta_HC_t,Delta]=get_updatehypercube(xmeasure,x_tminus,u_tminus,theta_bar_t,eta_t,Theta_HC0,Theta_HC_t,Delta,H_w,h_w,A_0,A_1,A_2,B_0,B_1,B_2,p,B_p,options)
@@ -199,7 +222,7 @@ function J_wc_t=get_worstcasecosttogo(X_hat_OL,S_hat_OL,V_OL,H,Q_wc,Q,R,K)
 end
 
 
-function [A_eq,b_eq,A_eq_theta1_bar,A_eq_theta2_bar,A_eq_theta1_hat,A_eq_theta2_hat,A_ineq,b_ineq,A_ineq_eta,A_ineq_rho]=get_constraints(x0,A_cl_0,B_0,B_1,B_2,A_cl_theta1,A_cl_theta2,F,G,K,c,L_B,d_bar,H,B_p,n,m,N,p)
+function [A_eq,b_eq,A_eq_theta1_bar,A_eq_theta2_bar,A_eq_theta1_hat,A_eq_theta2_hat,A_ineq,b_ineq,A_ineq_eta,A_ineq_rho]=get_constraints(x0,A_cl_0,B_0,B_1,B_2,A_cl_theta1,A_cl_theta2,F,G,K,c,L_B,d_bar,H,B_p,n,m,N,p,L)
 %This function builds the equality and the inequality constraints.
 %Equality constraints
 %System dynamics for x_bar
@@ -234,11 +257,13 @@ function [A_eq,b_eq,A_eq_theta1_bar,A_eq_theta2_bar,A_eq_theta1_hat,A_eq_theta2_
     %Inequality constraints
     %Terminal constraints
     A_ineq=[zeros(size(H,1),n*N),H,zeros(size(H,1),n*(N+1)),zeros(size(H,1),N*m),zeros(size(H,1),N+1),-ones(size(H,1),1)];
-    b_ineq=0;
-    A_ineq=[A_ineq;zeros(1,n*(N+1)),zeros(1,n*(N+1)),zeros(1,N*m),zeros(1,N),1,1];
+    b_ineq=zeros(size(H,1),1);
+    A_ineq=[A_ineq;zeros(1,n*(N+1)),zeros(1,n*(N+1)),zeros(1,N*m),zeros(1,N),ones(1,1),ones(1,1)];
     b_ineq=[b_ineq;0];
+    b_ineq=[b_ineq;1];%lambda<=1
+    b_ineq=[b_ineq;zeros(L,1)];%lambda_i>0
+    A_ineq=[A_ineq;zeros(L+1,n*(N+1)),zeros(L+1,n*(N+1)),zeros(L+1,N*m),zeros(L+1,N+2)];
     %Constraints
-    b_ineq=zeros(size(A_ineq,1),1);
     for k=0:N-1
         A_ineq=[A_ineq;zeros(size(F,1),n*k),F+G*K,zeros(size(F,1),n*(N-k)),zeros(size(F,1),n*(N+1)),zeros(size(F,1),m*k),G,zeros(size(F,1),m*(N-1-k)),zeros(size(F,1),k),c,zeros(size(F,1),N-k),zeros(size(F,1),1)];
         b_ineq=[b_ineq;ones(size(F,1),1)];
@@ -259,7 +284,7 @@ function [A_eq,b_eq,A_eq_theta1_bar,A_eq_theta2_bar,A_eq_theta1_hat,A_eq_theta2_
     end   
 end
 
-function H_cost=getcost(Q,R,K,n,N,m)
+function H_cost=getcost(Q,R,K,n,N,m,L)
 %This function builds the cost function matrix H
     H_cost=[];
     %Zeros for x_bar
@@ -279,12 +304,13 @@ function H_cost=getcost(Q,R,K,n,N,m)
         H_cost(2*(N+1)*n+k+m,(N+1)*n+k*n+1:(N+1)*n+(k+1)*n) = R*K;
         H_cost((N+1)*n+k*n+1:(N+1)*n+(k+1)*n,2*(N+1)*n+k+1) = K'*R;
     end
-    %Zeros for s
+    %Zeros for s   
     H_cost=blkdiag(H_cost,zeros(N+1+1));
     H_cost=2*H_cost; %Since we solve the problem min 0.5*y'*H*y
 end
-function f_cost=get_updateCost(Q_func,n,m,N)
+function [f_cost,H_cost]=get_updateCost(Q_func,n,m,N,H_cost_base,L)
 f_cost=[zeros(n*(N+1)+n*(N+1)+m*N+(N+1)+1,1);Q_func'];
+H_cost=blkdiag(H_cost_base,zeros(L));
 end
 
 function [SS,Q_func,L]=get_updateSampleSet(SS,Q_func,X_bar_cell,J_wc_cell,V_OL_cell,S_OL_cell)
@@ -296,20 +322,30 @@ function [SS,Q_func,L]=get_updateSampleSet(SS,Q_func,X_bar_cell,J_wc_cell,V_OL_c
     L=size(Q_func,2);
 end
 
-function [A_eqt,b_eqt,A_ineqt,b_ineqt]=get_currentConstraints(SS,x0,eta,rho,theta_bar,theta_hat,A_eq,b_eq,A_eq_theta1_bar,A_eq_theta2_bar,A_eq_theta1_hat,A_eq_theta2_hat,A_ineq,b_ineq,A_ineq_eta,A_ineq_rho,L,n,N)
+function [A_eqt,b_eqt,A_ineqt,b_ineqt]=get_currentConstraints(SS,x0,eta,rho,theta_bar,theta_hat,A_eq,b_eq,A_eq_theta1_bar,A_eq_theta2_bar,A_eq_theta1_hat,A_eq_theta2_hat,A_ineq,b_ineq,A_ineq_eta,A_ineq_rho,H,L,n,N)
 %This function builds the constraints for the current theta and rho.
     b_eq(1:n)=x0;
     b_eq(n*(N+1)+1:n*(N+2))=x0;
     A_eqt=A_eq+A_eq_theta1_bar*theta_bar(1)+A_eq_theta2_bar*theta_bar(2)+A_eq_theta1_hat*theta_hat(1)+A_eq_theta2_hat*theta_hat(2);
     b_eqt=b_eq;
     A_ineqt=A_ineq+A_ineq_eta*eta+A_ineq_rho*rho;
-    b_ineqt=b_ineq+b_ineq_xF*xF+b_ineq_sF*sF;
+    b_ineqt=b_ineq;
     %Update Lambda part
     A_ineq_lamda=-H*SS(1:2,:);
     A_ineq_lamda=[A_ineq_lamda;-SS(3,:)];
-    A_eq_lambda=zeros(size(b_eq,1),L);
+    A_ineq_lamda=[A_ineq_lamda;ones(1,L);-eye(L)];
     A_ineq_lamda=[A_ineq_lamda;zeros(size(A_ineq,1)-size(A_ineq_lamda,1),L)];
+
+    A_eq_lambda=zeros(size(b_eq,1),L);
 
     A_ineqt=[A_ineqt,A_ineq_lamda];
     A_eqt=[A_eqt,A_eq_lambda];
+end
+function plotting(x_bar_OL,s_OL,H)
+for k=1:length(x_bar_OL)       
+        X_t=Polyhedron(H,s_OL(k)*ones(size(H,1),1)+H*x_bar_OL(:,k));
+        plot(X_t,"color",[0 0 1])
+        hold on
+end
+    plot(x_bar_OL(1,:),x_bar_OL(2,:),"LineWidth",2,"Marker",'.', 'MarkerSize', 20)
 end
