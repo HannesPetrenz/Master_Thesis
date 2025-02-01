@@ -105,9 +105,12 @@ K = Y/X;
 check=check_lmi_constrain(X,Y,A_grid,B_grid,rho,L,n,m);
 %% Compute rho and delta_loc
 % Define the range and number of grid points for each state
-numPoints = 10; % Number of points per state
-delta_loc=10000;
-x1 = linspace(s_min, s_max, numPoints);
+numPoints = 3; % Number of points per state
+delta_loc=1000;
+cond=true;
+idx=[find(track.cl_segs(:,2)==0,1);find(track.cl_segs(:,2)~=0)];
+distance=[0;cumsum(track.cl_segs(:,1))];
+x1 = mean([distance(idx),distance(idx+1)].');
 x2 = linspace(e_ymin, e_ymax, numPoints);
 x3 = linspace(e_psimin, e_psimax, numPoints);
 x4 = linspace(v_min, v_max, numPoints);
@@ -119,48 +122,42 @@ u2 = linspace(a_min, a_max, numPoints);
 [U1,U2]=ndgrid(u1,u2);
 % Reshape grid matrices into state vectors
 states = [X1(:), X2(:), X3(:), X4(:), X5(:)];
+states_z=states(1:1:end,:);
 inputs = [U1(:), U2(:)];
 numStates = size(states, 1);
+numStates_z = size(states_z, 1);
 numInputs = size(inputs,1);
 % Compute differences for all possible (x, z) pairs
-cond=true;
-while cond
-    for i = 1:numStates
-        for j = 1:numStates
-            for k=1:numInputs
-                x = states(i, 1:n).'; % First point
-                z = states(j, 1:n).'; % Second point
-                v = inputs(k, :).';
-                u=K*(x-z)+v;
-                % Compute the difference x - z
-                diff = x - z;
-                norm_diff_P = sqrt(diff.' * P * diff);            
-                if norm_diff_P<=delta_loc && ~any(L_u*u-l_u>0)
-                    kappa=eval_kappa(z(1),track);
-                    z_plus=system_f(v(2),z(5),z(3),z(2),h_value,kappa,l_f_value,l_r_value,z(1),theta_0,v(1),z(4));      
-                    x_plus=system_f(u(2),x(5),x(3),x(2),h_value,kappa,l_f_value,l_r_value,x(1),theta_0,u(1),x(4));
-                    norm_diff_P_plus=sqrt((x_plus-z_plus).' * P * (x_plus-z_plus));
-                    rho*norm_diff_P
-                    pause(0.5)
-                    if norm_diff_P_plus>rho*norm_diff_P 
-                        cond=false;
-                        break
-                    end    
+for l=1:size(Theta_0.V,1)
+    theta=Theta_0.V(l);
+    for i = 1:numStates_z
+        z = states_z(i, 1:n).'; % First point
+        L_chol=chol(P);
+        z_tilde = L_chol * z;  % Transform z using Cholesky decomposition
+        % Transform all states z
+        states_tilde = L_chol * states.';
+        % Build KD-Tree in transformed space
+        stateTree = KDTreeSearcher(states_tilde.');
+        idx = rangesearch(stateTree, z_tilde.', delta_loc);
+        x_tilde = states_tilde(:,idx{1}); 
+        x = states(idx{1},:).';
+        u_xz=K*(x-z);
+        input_con=[];
+        for k=1:numInputs
+            v = inputs(k, :).';
+            u=u_xz+v;
+            con_ux=[u(:,all(L_u*u-l_u<=0));x(:,all(L_u*u-l_u<=0))];
+            for j=1:size(con_ux,2)
+                u_=con_ux(1:m,j);
+                x_=con_ux(m+1:end,j);
+                z_plus = system_f(v(2),z(5),z(3),z(2),h_value,eval_kappa(z(1),track),l_f_value,l_r_value,z(1),theta,v(1),z(4));
+                x_plus = system_f(u_(2),x_(5),x_(3),x_(2),h_value,eval_kappa(x_(1),track),l_f_value,l_r_value,x_(1),theta,u_(1),x_(4));
+                if sqrt((x_plus-z_plus).'*P*(x_plus-z_plus))-rho*sqrt((x_-z).'*P*(x_-z))>0
+                    disp("condition not satisfied")
+                    cond=false;
                 end
-            end
-            if cond==false
-                break
-            end
+            end       
         end
-        if cond==false
-            break
-        end
-    end
-    if cond==false
-       cond=true;
-       delta_loc=delta_loc-100;
-    else
-        break
     end
 end
 %% Compute d_bar
