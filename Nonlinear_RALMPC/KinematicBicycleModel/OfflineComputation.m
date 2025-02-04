@@ -17,11 +17,13 @@ delta_kplus=delta_k+h*u_deltak;
 x=[s_k;e_yk;e_psik;v_k;delta_k];
 u=[u_deltak;a_k];
 f=[s_kplus;e_ykplus;e_psikplus;v_kplus;delta_kplus];
+G=jacobian(f,theta);
 %size
 m=size(u,1);
 n=size(x,1);
 %generate a matlab function
 matlabFunction(f,"File","system_f");
+matlabFunction(G,"File","system_G");
 %% Define constants
 h_value=0.01;
 l_f_value=0.125;%[m]
@@ -77,7 +79,7 @@ eta_0=0.01;
 Theta_0=theta_0+eta_0*B_p;
 %% Additive Disturbance 
 A_d=kron(eye(n),[-1;1]);
-b_d=0.001*[1;1;
+b_d=0.0001*[1;1;
     e_ymax;e_ymax;
     e_psimax;e_psimax;
     v_max;v_max;
@@ -105,67 +107,177 @@ K = Y/X;
 check=check_lmi_constrain(X,Y,A_grid,B_grid,rho,L,n,m);
 %% Compute rho and delta_loc
 % Define the range and number of grid points for each state
-numPoints = 3; % Number of points per state
-delta_loc=1000;
-cond=true;
-idx=[find(track.cl_segs(:,2)==0,1);find(track.cl_segs(:,2)~=0)];
-distance=[0;cumsum(track.cl_segs(:,1))];
-x1 = mean([distance(idx),distance(idx+1)].');
+numPoints = 10; % Number of points per state
+delta_loc = 1000;
+cond = true;
+
+% Precompute grid points
+idx = [find(track.cl_segs(:,2) == 0, 1); find(track.cl_segs(:,2) ~= 0)];
+distance = [0; cumsum(track.cl_segs(:,1))];
+x1 = mean([distance(idx), distance(idx+1)].');
 x2 = linspace(e_ymin, e_ymax, numPoints);
 x3 = linspace(e_psimin, e_psimax, numPoints);
 x4 = linspace(v_min, v_max, numPoints);
 x5 = linspace(delta_min, delta_max, numPoints);
-u1 = linspace(u_deltamin, u_deltamax, numPoints);
-u2 = linspace(a_min, a_max, numPoints);
+v1 = linspace(u_deltamin, u_deltamax, numPoints/2);
+v2 = linspace(a_min, a_max, numPoints/2);
+
 % Create a 3D grid of states
-[X1, X2, X3,X4,X5] = ndgrid(x1, x2, x3,x4,x5);
-[U1,U2]=ndgrid(u1,u2);
-% Reshape grid matrices into state vectors
+[X1, X2, X3, X4, X5] = ndgrid(x1, x2, x3, x4, x5);
+[V1, V2] = ndgrid(v1, v2);
+
+% Reshape into vectors
 states = [X1(:), X2(:), X3(:), X4(:), X5(:)];
-states_z=states(1:1:end,:);
-inputs = [U1(:), U2(:)];
+states_z = states(1:800:end, :);
+inputs = [V1(:), V2(:)];
+
+% Precompute sizes
 numStates = size(states, 1);
 numStates_z = size(states_z, 1);
-numInputs = size(inputs,1);
-% Compute differences for all possible (x, z) pairs
-for l=1:size(Theta_0.V,1)
-    theta=Theta_0.V(l);
+numInputs = size(inputs, 1);
+
+% Precompute Cholesky decomposition
+L_chol = chol(P);
+
+% Transform all states once
+states_tilde = L_chol * states.';
+
+% Build KD-Tree once (outside loop)
+stateTree = KDTreeSearcher(states_tilde.');
+
+% Iterate over theta values
+for k = 1:size(Theta_0.V, 1)
+    theta = Theta_0.V(k);
+
+    % Iterate over subset of states
     for i = 1:numStates_z
-        z = states_z(i, 1:n).'; % First point
-        L_chol=chol(P);
-        z_tilde = L_chol * z;  % Transform z using Cholesky decomposition
-        % Transform all states z
-        states_tilde = L_chol * states.';
-        % Build KD-Tree in transformed space
-        stateTree = KDTreeSearcher(states_tilde.');
+        z = states_z(i, :).';  % Single z point
+        z_tilde = L_chol * z;  % Transform z
+
+        % Find nearby states x using KD-Tree
         idx = rangesearch(stateTree, z_tilde.', delta_loc);
-        x_tilde = states_tilde(:,idx{1}); 
-        x = states(idx{1},:).';
-        u_xz=K*(x-z);
-        input_con=[];
-        for k=1:numInputs
-            v = inputs(k, :).';
-            u=u_xz+v;
-            con_ux=[u(:,all(L_u*u-l_u<=0));x(:,all(L_u*u-l_u<=0))];
-            for j=1:size(con_ux,2)
-                u_=con_ux(1:m,j);
-                x_=con_ux(m+1:end,j);
-                z_plus = system_f(v(2),z(5),z(3),z(2),h_value,eval_kappa(z(1),track),l_f_value,l_r_value,z(1),theta,v(1),z(4));
-                x_plus = system_f(u_(2),x_(5),x_(3),x_(2),h_value,eval_kappa(x_(1),track),l_f_value,l_r_value,x_(1),theta,u_(1),x_(4));
-                if sqrt((x_plus-z_plus).'*P*(x_plus-z_plus))-rho*sqrt((x_-z).'*P*(x_-z))>0
-                    disp("condition not satisfied")
-                    cond=false;
-                end
-            end       
+        x_tilde = states_tilde(:, idx{1}); 
+        x = states(idx{1}, :).';  % Extract corresponding x
+
+        % Compute u for all valid (x, z, v)
+        u_xz = K * (x - z);  % Matrix operation
+
+        % Expand `inputs` across `x` to efficiently compute `U`
+        V=kron(inputs.', ones(1, size(u_xz, 2)));
+        U = repmat(u_xz, 1, numInputs) + V;
+
+        % Check constraint L_u * u - l_u <= 0
+        valid_mask = all(L_u * U <= l_u, 1);
+
+        % Extract valid indices
+        valid_idx = find(valid_mask);
+
+        % Ensure valid_x and valid_U have the same dimensions
+        valid_U = U(:, valid_idx);
+        valid_x = repmat(x, 1, numInputs);  % Repeat `x` for each input combination
+        valid_x = valid_x(:, valid_idx);  % Select only valid entries
+        valid_v =V(:,valid_idx);
+        % Iterate over valid (u, x)
+        for j = 1:size(valid_U, 2)
+            u_ = valid_U(:, j);
+            x_ = valid_x(:, j);
+            v_ = valid_v(:, j);
+            % Compute next states
+            z_plus = system_f(v_(2), z(5), z(3), z(2), h_value, eval_kappa(z(1), track), l_f_value, l_r_value, z(1), theta, v_(1), z(4));
+            x_plus = system_f(u_(2), x_(5), x_(3), x_(2), h_value, eval_kappa(x_(1), track), l_f_value, l_r_value, x_(1), theta, u_(1), x_(4));
+
+            % Check contraction condition
+            if sqrt((x_plus - z_plus).' * P * (x_plus - z_plus)) - rho * sqrt((x_ - z).' * P * (x_ - z)) > 0
+                disp("Condition not satisfied. Decrease the size of delta_loc");
+                cond = false;
+                break
+            end    
         end
     end
+    if cond==false
+        break
+    end
 end
+rho_theta0=rho;
+%% Compute L_B_rho
+%Compute the set Psi: Using results from the previous section
+ % Iterate over subset of states
+for i = 1:numStates_z
+    z = states_z(i, :).';  % Single z point
+    z_tilde = L_chol * z;  % Transform z
+    % Find nearby states x using KD-Tree
+    idx = rangesearch(stateTree, z_tilde.', delta_loc);
+    x_tilde = states_tilde(:, idx{1}); 
+    x = states(idx{1}, :).';  % Extract corresponding x
+    % Compute u for all valid (x, z, v)
+    u_xz = K * (x - z);  % Matrix operation
+
+    % Expand `inputs` across `x` to efficiently compute `U`
+    V=kron(inputs.', ones(1, size(u_xz, 2)));
+    U = repmat(u_xz, 1, numInputs) + V;
+    % Check constraint L_u * u - l_u <= 0
+    valid_mask = all(L_u * U <= l_u, 1);
+
+    % Extract valid indices
+    valid_idx = find(valid_mask);
+    
+    % Ensure valid_x and valid_U have the same dimensions
+    valid_u = U(:, valid_idx);
+    valid_x = repmat(x, 1, numInputs);  % Repeat `x` for each input combination
+    valid_x = valid_x(:, valid_idx);  % Select only valid entries
+    valid_v =V(:,valid_idx);
+    valid_z=repmat(z,1,size(valid_v,2));
+    Psi{i}=[valid_z;valid_v;valid_x;valid_u];
+end
+%Set up the SDP
+gamma=sdpvar(1);
+obj=gamma;
+con=construct_lmi_L_B(gamma,Psi,P,Theta_0,h_value,n,m);
+diagnostics = optimize(con,obj);
+L_B_rho=value(gamma);
 %% Compute d_bar
 gamma=sdpvar(1);
 obj=gamma;
 con=construct_lmi_d(gamma,P,D);
 diagnostics = optimize(con,obj);
 d_bar=value(gamma);
+%% Compute c_j
+gamma=sdpvar(1);
+c=[];
+con=[];
+for i=1:size(L,1)
+    obj=gamma;
+    con=[(L(i,m+1:end)+L(i,1:m)*K).'*(L(i,m+1:end)+L(i,1:m)*K)-gamma*P<=0;gamma>=0];
+    diagnostics = optimize(con,obj);
+    c=[c;value(gamma)];
+end
+%% Compute the parameter update gain mu
+options = optimset('Display','off');
+[test,fval] = fmincon(@(x) 1/getDsq(x,h_value),[1;1],...
+    L_u,l_u,[],[],[],[],[],options);
+mu = floor(fval);
+%% Terminal set
+s_s=track.cl_segs(1,1)+track.cl_segs(2,1)+track.cl_segs(3,1)/2;
+x_s=[s_s;0;0;1;0];
+u_s=[0;0];
+if all(x_s== system_f(u_s(2), x_s(5), x_s(3), x_s(2), h_value, eval_kappa(x_s(1), track), l_f_value, l_r_value, x_s(1), theta, u_s(1), x_s(4)))
+    disp("It is a steady state!")
+end
+%c_xs
+c_xs=min([-(L*[u_s;x_s]-l)./c;delta_loc]);
+%Check the scalar condition 
+L_theta0=eta_0*L_B_rho;
+w_theta0=[];
+for i=1:size(Theta_0.V,2)
+    w_theta0(i)=sqrt((system_G(u_s(2),h_value)*Theta_0.V(i)).'*P*(system_G(u_s(2),h_value)*Theta_0.V(i)));
+end
+w_theta0D_s=eta_0*max(w_theta0)+d_bar;
+
+if rho_theta0+L_theta0+c_xs*w_theta0D_s<=1
+    disp("The terminal set condition is satisfied")
+else
+    disp("The terminal set condition is not satisfied")
+end
 %% Help function 
 function [A_grid,B_grid]=gridding(track,con_x_lb,con_x_ub,Theta_0,accuracy)
 idx=[find(track.cl_segs(:,2)==0,1);find(track.cl_segs(:,2)~=0)];
@@ -244,4 +356,27 @@ con=[];
         con=[con;gamma^2-D.V(i,:)*P*D.V(i,:).'>=0];
     end
     con=[con;gamma>=0];
+end
+
+function con=construct_lmi_L_B(gamma,Psi,P,Theta,h_value,n,m)
+con=[];
+    for i=1:length(Psi)
+        for k=1:size(Psi{i},2)
+            z=Psi{i}(1:n,k);
+            v=Psi{i}((n+1):(n+m),k);
+            x=Psi{i}((n+m+1):(n+m+n),k);
+            u=Psi{i}((n+m+n+1):end,k);
+            G_x = system_G(u(2),h_value);
+            G_v = system_G(v(2),h_value);
+            for j=1:size(Theta.V,1)
+                con=[con;[0>=gamma^2*(x-z).'*P*(x-z)-((G_x-G_v)*Theta.V(j)).'*P*((G_x-G_v)*Theta.V(j))]];
+            end
+        end
+    end
+    con=[con;gamma>=0];
+end
+
+function [y_sq] = getDsq(X,h)
+    y = system_G(X(2),h);
+    y_sq = norm(y)^2; 
 end
