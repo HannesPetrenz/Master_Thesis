@@ -1,4 +1,4 @@
-function [X,U,S,J,X_hat_OL,X_bar_OL,V_OL,S_OL,J_wc,time,Theta_HC_t,t_cpu]=RALMPC_Convex_Online(x0,SS,Q_func,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,K,F,G,d_bar,L_B,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,Ts,numberitertions,adaption,disturbance_deter)
+function [X,U,S,J,X_hat_OL,X_bar_OL,V_OL,S_OL,J_wc,time,Theta_HC,t_cpu]=RALMPC_Convex_Online(x0,SS,Q_func,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,K,F,G,d_bar,L_B,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,Ts,numberitertions,adaption,disturbance_deter)
 %import Casadi
 import casadi.*
 rng(1)
@@ -104,6 +104,7 @@ for h=1:numberitertions
         V_OL_cell{t+1}=v_OL;
         S_OL_cell{t+1}=s_OL;
         J_wc_cell{t+1}=get_worstcasecosttogo(x_hat_OL,s_OL,v_OL,H,Q_wc,Q,R,K);
+        Theta_HC_cell{t+1}=Theta_HC_t;
         x_tminus=xmeasure;
         u_tminus=v_OL(:,1)+K*xmeasure;
         %Simulate the uncertain system
@@ -130,6 +131,8 @@ for h=1:numberitertions
     V_OL{h}=V_OL_cell;
     S_OL{h}=S_OL_cell;
     J_wc{h}=J_wc_cell;
+    %parameter update
+    Theta_HC{h}=Theta_HC_cell;
     %Update the sample set and the function Q
     [SS,Q_func,L]=get_updateSampleSet(SS,Q_func,X_bar_OL{h},J_wc{h},V_OL{h},S_OL{h},Q_func_init,SS_init);
     t_cpu{h} = cputime - tStart;

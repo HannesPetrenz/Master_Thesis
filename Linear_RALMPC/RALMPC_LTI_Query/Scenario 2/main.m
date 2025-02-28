@@ -58,12 +58,12 @@ s0=0;
 %% Offline Computation Robust Adaptive Learning MPC 
 [Theta_HC0,theta_bar0,eta_0,K,P,mu,H,rho_theta0,L_B,d_bar,c,c_max]=RALMPC_Offline(Q,R,F,G,B_p,W,A_0,A_1,A_2,B_0,B_1,B_2,m,n,p);
 %% Compute inital solution 
-[SS_0,J_wc_0,X_bar_inital,S_inital]=get_Initalsolution(x0,s0,theta_bar0,B_p,eta_0,rho_theta0,L_B,d_bar,c,c_max,H,A_0,A_1,A_2,B_0,B_1,B_2,K,Q,R,P,F,G,m,n,p);
+[SS_0,J_wc_0,X_bar_inital,S_inital,J_0]=get_Initalsolution(x0,s0,theta_bar0,B_p,eta_0,rho_theta0,L_B,d_bar,c,c_max,H,A_0,A_1,A_2,B_0,B_1,B_2,K,Q,R,P,F,G,m,n,p);
 %% Solve RMPC
 disp("Solve the RMPC")
 %No Adaption to the unknown parameter
 %RMPC Setting
-N_RMPC=25;
+    N_RMPC=25;
 M = 10;
 adpation=false;
 %initalize Delta
@@ -86,7 +86,7 @@ end
 %Solve the Optimization Problem
 for i=1:numberitertions
     tStart = cputime;
-    [X_hat_OL_RAMPC{i},X_bar_OL_RAMPC{i},V_OL_RAMPC{i},S_OL_RAMPC{i},J_RAMPC{i},X_RAMPC{i},U_RAMPC{i},time_RAMPC{i},Theta_HC_t_RAMPC{i}]=solve_RAMPC(x0,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,P,K,F,G,d_bar,L_B,c_max,c,H,B_p,n,m,N_RAMPC,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,T_s,adpation,disturbance_deter);
+    [X_hat_OL_RAMPC{i},X_bar_OL_RAMPC{i},V_OL_RAMPC{i},S_OL_RAMPC{i},J_RAMPC{i},X_RAMPC{i},U_RAMPC{i},time_RAMPC{i},Theta_HC_RAMPC{i}]=solve_RAMPC(x0,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,P,K,F,G,d_bar,L_B,c_max,c,H,B_p,n,m,N_RAMPC,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,T_s,adpation,disturbance_deter);
     t_cpu_RAMPC{i} = cputime - tStart;
 end
 %% Solve for the Optimal Solution
@@ -99,7 +99,7 @@ tStart = cputime;
 t_cpu_OS = cputime - tStart;
 %% Query
 disp("Solve the Query")
-for N=16:-2:4
+for N=18:-2:4
     disp("N: "+N)
     %Solve the RLMPC
     %RLMPC Setting   
@@ -111,7 +111,7 @@ for N=16:-2:4
     SS=SS_0 ;
     Q_func=J_wc_0;
     %Solve the Optimization Problem
-    [X_RLMPC,U_RLMPC,S_RLMPC,J_RLMPC,X_hat_OL_RLMPC,X_bar_OL_RLMPC,V_OL_RLMPC,S_OL_RLMPC,J_wc_RLMPC,time_RLMPC,Theta_HC_t_RLMPC,t_cpu_RLMPC]=RALMPC_Convex_Online(x0,SS,Q_func,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,K,F,G,d_bar,L_B,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,T_s,numberitertions,adpation,disturbance_deter);
+    [X_RLMPC,U_RLMPC,S_RLMPC,J_RLMPC,X_hat_OL_RLMPC,X_bar_OL_RLMPC,V_OL_RLMPC,S_OL_RLMPC,J_wc_RLMPC,time_RLMPC,Theta_HC_RLMPC,t_cpu_RLMPC]=RALMPC_Convex_Online(x0,SS,Q_func,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,K,F,G,d_bar,L_B,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,T_s,numberitertions,adpation,disturbance_deter);
     %Solve the RALMPC
     %RALMPC Setting
     M = 10;
@@ -124,11 +124,11 @@ for N=16:-2:4
     SS=SS_0 ;
     Q_func=J_wc_0;
     %Use the convex robust safe set implementation 
-    [X_RALMPC,U_RALMPC,S_RALMPC,J_RALMPC,X_hat_OL_RALMPC,X_bar_OL_RALMPC,V_OL_RALMPC,S_OL_RALMPC,J_wc_RALMPC,time_RALMPC,Theta_HC_t_RALMPC,t_cpu_RALMPC]=RALMPC_Convex_Online(x0,SS,Q_func,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,K,F,G,d_bar,L_B,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,T_s,numberitertions,adpation,disturbance_deter);
+    [X_RALMPC,U_RALMPC,S_RALMPC,J_RALMPC,X_hat_OL_RALMPC,X_bar_OL_RALMPC,V_OL_RALMPC,S_OL_RALMPC,J_wc_RALMPC,time_RALMPC,Theta_HC_RALMPC,t_cpu_RALMPC]=RALMPC_Convex_Online(x0,SS,Q_func,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,K,F,G,d_bar,L_B,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,T_s,numberitertions,adpation,disturbance_deter);
     % Plot and Save
-    plotten(H,X_bar_inital,S_inital,X_RALMPC,X_RMPC,X_RAMPC,X_OS,Theta_HC0,Theta_HC_t_RAMPC,Theta_HC_t_RALMPC,J_RMPC,J_RAMPC,J_RALMPC,J_RLMPC,J_OS,N,numberitertions,disturbance_deter,t_cpu_RMPC,t_cpu_RAMPC,t_cpu_RLMPC,t_cpu_RALMPC,t_cpu_OS,T_s)
+    %plotten(H,X_bar_inital,S_inital,X_RALMPC,X_RMPC,X_RAMPC,X_OS,Theta_HC0,Theta_HC_t_RAMPC,Theta_HC_t_RALMPC,J_RMPC,J_RAMPC,J_RALMPC,J_RLMPC,J_OS,N,numberitertions,disturbance_deter,t_cpu_RMPC,t_cpu_RAMPC,t_cpu_RLMPC,t_cpu_RALMPC,t_cpu_OS,T_s)
     %Save as mat
-    name="/Users/hannes/Documents/MATLAB/Master_Thesis/RALMPC_LTI_Query/Scenario 2/Data/data_"+"Iter"+string(numberitertions)+"_N"+string(N)+"Determenistic"+string(disturbance_deter)+".mat";
-    save(name,"H","X_bar_inital","S_inital","X_RALMPC","X_RMPC","X_RAMPC","X_OS","Theta_HC0","Theta_HC_t_RAMPC","Theta_HC_t_RALMPC","J_RMPC","J_RAMPC","J_RALMPC","J_RLMPC","J_OS","N","numberitertions","disturbance_deter","t_cpu_RMPC","t_cpu_RAMPC","t_cpu_RLMPC","t_cpu_RALMPC","t_cpu_OS","T_s")
+    name="/Users/hannes/Documents/MATLAB/Master_Thesis/Linear_RALMPC/RALMPC_LTI_Query/Scenario 2/Data/data_"+"Iter"+string(numberitertions)+"_N"+string(N)+"Determenistic"+string(disturbance_deter)+".mat";
+    save(name,"H","X_bar_inital","J_wc_0","J_0" ,"S_inital","X_RALMPC","X_RMPC","X_RAMPC","X_OS","Theta_HC0","Theta_HC_RAMPC","Theta_HC_RALMPC","J_RMPC","J_RAMPC","J_RALMPC","J_RLMPC","J_OS","N","numberitertions","disturbance_deter","t_cpu_RMPC","t_cpu_RAMPC","t_cpu_RLMPC","t_cpu_RALMPC","t_cpu_OS","T_s")
 end
 

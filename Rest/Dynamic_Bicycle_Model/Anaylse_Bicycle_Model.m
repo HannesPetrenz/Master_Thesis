@@ -15,6 +15,7 @@ track=load("L_track_barc.mat");
 plot(x_grid(:,1),y_grid(:,1))
 hold on
 plot(x_grid(:,2),y_grid(:,2))
+save("Track_Barc.mat","track_key_pts","track")
 %% Tire forces
 %slip angles
 alpha_f=atan((v_y+lf*psi_dot)/norm(v_x));

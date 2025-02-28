@@ -1,4 +1,4 @@
-function [X_hat_OL,X_bar_OL,V_OL,S_OL,J,X,U,time,Theta_HC_t]=solve_RAMPC(x0,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,P,K,F,G,d_bar,L_B,c_max,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,Ts,adpation,disturbance_deter)
+function [X_hat_OL,X_bar_OL,V_OL,S_OL,J,X,U,time,Theta_HC]=solve_RAMPC(x0,A_0,A_1,A_2,B_0,B_1,B_2,A_star,B_star,H_w,h_w,W_V,Q,R,P,K,F,G,d_bar,L_B,c_max,c,H,B_p,n,m,N,p,Theta_HC0,theta_bar0,eta_0,rho_theta0,Delta,mu,Ts,adpation,disturbance_deter)
 %import Casadi
 rng(1)
 import casadi.*
@@ -89,6 +89,7 @@ while t<60
         V_OL{t+1}=v_OL;
         S_OL{t+1}=s_OL;
         J_wc{t+1}=get_worstcasecosttogo(X_hat_OL{end},S_OL{end},V_OL{end},H,P,Q,R,K);
+        Theta_HC{t+1}=Theta_HC_t;
     x_tminus=X(:,end);
     u_tminus=U(:,end);
     J=J+x_tminus'*Q*x_tminus+u_tminus'*R*u_tminus;

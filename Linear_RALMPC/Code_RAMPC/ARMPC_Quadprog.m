@@ -171,6 +171,7 @@ H=0.5*H;
 y_s=[repmat(x_ss,2*(N+1),1);repmat(u_ss-K*x_ss,N,1);zeros(N+1,1)];
 f=-y_s'*H;
 %% initial guess
+%y=[x,\hat{x},v,s]: n*(N+1)+N*m+N+1 (add x_hat later...)
 y_init=[zeros(2*(N+1)*n+N*m,1)];
 for k=0:N-1
    y_init=[y_init;(1-(rho_t+eta*L_B)^k)/(1-(rho_t+eta*L_B))*dbar];

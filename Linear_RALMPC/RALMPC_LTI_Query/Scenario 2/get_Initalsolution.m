@@ -1,4 +1,4 @@
-function [SS_0,J_wc_0,X_bar,S]=get_Initalsolution(x0,s0,theta_bar0,B_p,eta_0,rho_theta0,L_B,d_bar,c,c_max,H,A_0,A_1,A_2,B_0,B_1,B_2,K,Q,R,P,F,G,m,n,p)
+function [SS_0,J_wc_0,X_bar,S,J_0]=get_Initalsolution(x0,s0,theta_bar0,B_p,eta_0,rho_theta0,L_B,d_bar,c,c_max,H,A_0,A_1,A_2,B_0,B_1,B_2,K,Q,R,P,F,G,m,n,p)
 %compute the system matrix for theta_0
 [A_cl_thetabar0,B_thetabar0] = get_AB_theta(theta_bar0,A_0,A_1,A_2,B_0,B_1,B_2);
 A_cl_thetahat0=A_cl_thetabar0;
@@ -35,8 +35,13 @@ cost_to_go_wc=cost;
 for k=length(X_bar)-1:-1:2
     X=Polyhedron(H,S(k)*ones(size(H,1),1)+H*X_bar(:,k));
     cost=0;
+    if k<=length(V)
+        v=V(k);
+    else 
+        v=0;
+    end
     for i=1:size(H,1)
-    cost=max([cost;X.V(i,:)*Q*X.V(i,:)'+(X.V(i,:))*K'*R*K*X.V(i,:)']);
+    cost=max([cost;X.V(i,:)*Q*X.V(i,:)'+(X.V(i,:))*K'*R*K*X.V(i,:)'+v*R*v]);
     end
     cost_to_go_wc=[cost_to_go_wc,cost_to_go_wc(end)+cost];
 end
@@ -61,12 +66,13 @@ end
 J_wc_0=flip(cost_to_go_wc);
 SS_0=[X_bar(:,2:end);S(:,2:end);v(:,2:end)];
 
-checksecondcost=0;
+J_0=0;
 for i=1:length(X_bar)
-    u_second=v(i)+K*X_bar(:,i);
-    checksecondcost=checksecondcost+X_bar(:,i)'*Q*X_bar(:,i)+u_second'*R*u_second;
+    u_k=v(i)+K*X_bar(:,i);
+    J_0=J_0+X_bar(:,i)'*Q*X_bar(:,i)+u_k'*R*u_k;
 end
 end
+
 
 
 %% Help function

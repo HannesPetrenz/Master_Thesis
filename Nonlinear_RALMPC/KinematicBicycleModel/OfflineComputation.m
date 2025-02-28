@@ -1,82 +1,92 @@
-clear 
+clear
 clc
 %% Load Track data
 track=load("L_track_barc.mat");
+
 %% Define Variables
-syms s_k s_kplus e_yk e_ykplus e_psik e_psikplus v_k v_kplus delta_k delta_kplus %states
-syms a_k u_deltak %inputs
+syms s_k s_kplus e_yk e_ykplus e_psik e_psikplus v_k v_kplus delta_k delta_kplus % States
+syms a_k u_deltak % Inputs
 syms h l_f l_r kappa theta
+
 %% Define the model
-beta_k=atan((l_r/(l_r+l_f))*tan(delta_k));
-s_kplus=s_k+h*v_k*(cos(e_psik+beta_k)/(1-e_yk*kappa));
-e_ykplus=e_yk+h*v_k*sin(e_psik+beta_k);
-e_psikplus=e_psik+h*(v_k/l_f*sin(beta_k)-kappa*v_k*(cos(e_psik+beta_k)/(1-e_yk*kappa)));
-v_kplus=v_k+h*theta*a_k;
-delta_kplus=delta_k+h*u_deltak;
-%system
-x=[s_k;e_yk;e_psik;v_k;delta_k];
-u=[u_deltak;a_k];
-f=[s_kplus;e_ykplus;e_psikplus;v_kplus;delta_kplus];
-G=jacobian(f,theta);
-%size
-m=size(u,1);
-n=size(x,1);
-%generate a matlab function
-matlabFunction(f,"File","system_f");
-matlabFunction(G,"File","system_G");
+% Compute the slip angle beta_k
+beta_k = atan((l_r/(l_r + l_f)) * tan(delta_k));
+
+% State update equations
+s_kplus = s_k + h * v_k * (cos(e_psik + beta_k) / (1 - e_yk * kappa));
+e_ykplus = e_yk + h * v_k * sin(e_psik + beta_k);
+e_psikplus = e_psik + h * (v_k / l_f * sin(beta_k) - kappa * v_k * (cos(e_psik + beta_k) / (1 - e_yk * kappa)));
+v_kplus = v_k + h * theta * a_k;
+delta_kplus = delta_k + h * u_deltak;
+
+% System representation
+x = [s_k; e_yk; e_psik; v_k; delta_k]; % State vector
+u = [u_deltak; a_k]; % Input vector
+f = [s_kplus; e_ykplus; e_psikplus; v_kplus; delta_kplus]; % System dynamics
+
+% Compute Jacobian of f w.r.t. theta
+G = jacobian(f, theta);
+
+% Define system dimensions
+m = size(u, 1);
+n = size(x, 1);
+
+% Generate MATLAB functions for system dynamics and Jacobian
+matlabFunction(f, "File", "system_f");
+matlabFunction(G, "File", "system_G");
+
 %% Define constants
-h_value=0.01;
-l_f_value=0.125;%[m]
-l_r_value=0.125;%[m]
+h_value = 0.01;
+l_f_value = 0.125; % [m]
+l_r_value = 0.125; % [m]
+accuracy = 10;
+Q = eye(n);
+R = eye(m);
+rho = 0.9995;
 
-accuracy=2;
-
-Q=eye(n);
-R=eye(m);
-rho=0.9995;
 %% Define constraints
-%State
-s_min=0;
-s_max=sum(track.cl_segs(:,1));
-e_ymin=-track.track_width/2;
-e_ymax=track.track_width/2;
-e_psimin=-25/180*pi;
-e_psimax=25/180*pi;
-v_min=0.5;
-v_max=3.5;
-delta_min=-0.4;
-delta_max=0.4;
-%Input
-u_deltamin=-3;
-u_deltamax=3;
-a_min=-1.3;
-a_max=3;
-%Matrix
-L_u = kron(eye(m),[-1;1]);
-l_u=[-u_deltamin;u_deltamax;
-    -a_min;a_max];
-L_x= kron(eye(n),[-1;1]);
-l_x=[-s_min;s_max;
-    -e_ymin;e_ymax;
-    -e_psimin;e_psimax;
-    -v_min;v_max;
-    -delta_min;delta_max];
+% State constraints
+s_min = 0;
+s_max = sum(track.cl_segs(:,1));
+e_ymin = -track.track_width / 2;
+e_ymax = track.track_width / 2;
+e_psimin = -25 / 180 * pi;
+e_psimax = 25 / 180 * pi;
+v_min = 0.5;
+v_max = 3.5;
+delta_min = -0.4;
+delta_max = 0.4;
+
+% Input constraints
+u_deltamin = -3;
+u_deltamax = 3;
+a_min = -1.3;
+a_max = 3;
+
+% Constraint matrices
+L_u = kron(eye(m), [-1; 1]);
+l_u = [-u_deltamin; u_deltamax; -a_min; a_max];
+L_x = kron(eye(n), [-1; 1]);
+l_x = [-s_min; s_max; -e_ymin; e_ymax; -e_psimin; e_psimax; -v_min; v_max; -delta_min; delta_max];
+
 % Combined state and input constraints
-L = [L_u,zeros(size(L_u,1),size(L_x,2));
-   zeros(size(L_x,1),size(L_u,2)),L_x];
-l = [l_u;l_x];
-%upper and lower bound constraints
-con_u_lb=-l_u(1:2:end);
-con_u_ub=l_u(2:2:end);
-con_x_lb=-l_x(1:2:end);
-con_x_ub=l_x(2:2:end);
+L = [L_u, zeros(size(L_u, 1), size(L_x, 2));
+     zeros(size(L_x, 1), size(L_u, 2)), L_x];
+l = [l_u; l_x];
+
+% Compute upper and lower bound constraints
+con_u_lb = -l_u(1:2:end);
+con_u_ub = l_u(2:2:end);
+con_x_lb = -l_x(1:2:end);
+con_x_ub = l_x(2:2:end);
+
 %% Parametric Uncertainty
-HB_p = [1 ; -1 ];
-hB_p = [1;1];
-B_p = Polyhedron(HB_p,hB_p);
-theta_0=1;
-eta_0=0.01;
-Theta_0=theta_0+eta_0*B_p;
+HB_p = [1; -1];
+hB_p = [1; 1];
+B_p = Polyhedron(HB_p, hB_p);
+theta_0 = 1;
+eta_0 = 0.01;
+Theta_0 = theta_0 + eta_0 * B_p;
 %% Additive Disturbance 
 A_d=kron(eye(n),[-1;1]);
 b_d=0.0001*[1;1;
@@ -86,31 +96,50 @@ b_d=0.0001*[1;1;
     delta_max;delta_max];
 D = Polyhedron(A_d,b_d);
 %% Compute the Jacobian function for A and B
-compute_jacobian(f,x,u,h,l_f,l_r,h_value,l_f_value,l_r_value)
+compute_jacobian(f, x, u, h, l_f, l_r, h_value, l_f_value, l_r_value);
+
 %% Set up optimization problem
+fprintf("Computing P and K\n");
 % Define decision variables
 X = sdpvar(n);
-Y = sdpvar(m,n);
-% Define objective
+Y = sdpvar(m, n);
+% Define optimization settings
+ops = sdpsettings('verbose',0);
+% Define objective function
 obj = -log(det(X));
-%Gridding
-[A_grid,B_grid]=gridding(track,con_x_lb,con_x_ub,Theta_0,accuracy);
-%Compute constraints for the LMI
-con=construct_lmi_constrain(X,Y,A_grid,B_grid,rho,L,n,m);
-%Optimization
-diagnostics = optimize(con,obj);
+
+% Compute system matrices via gridding
+fprintf("\tCompute system matrices via gridding\n");
+[A_grid, B_grid] = gridding(track, con_x_lb, con_x_ub, Theta_0, accuracy);
+
+% Compute constraints for the Linear Matrix Inequalities (LMI)
+fprintf("\tCompute constraints for the LMI\n");
+con = construct_lmi_constrain(X, Y, A_grid, B_grid, rho, L, n, m);
+
+% Solve the optimization problem
+fprintf("\t Solve the SDP\n");
+diagnostics = optimize(con, obj,ops);
+if strcmp(diagnostics.info,'Successfully solved (SeDuMi)')
+    fprintf('SDP successfully solved!\n');
+else
+    fprintf('Solving SDP failed. Please try again.\n');
+end
 %% Obtain solution for P and K
 X = value(X);
 Y = value(Y);
 P = inv(X);
-K = Y/X;
-check=check_lmi_constrain(X,Y,A_grid,B_grid,rho,L,n,m);
+K = Y / X;
+
+% Check the validity of LMI constraints
+check = check_lmi_constrain(X, Y, A_grid, B_grid, rho, L, n, m);
 %% Compute rho and delta_loc
+fprintf("Gridding to find delta_loc\n");
 % Define the range and number of grid points for each state
-numPoints = 10; % Number of points per state
+numPoints = accuracy; % Number of points per state
 delta_loc = 1000;
 cond = true;
 
+fprintf("\tPrecompute grid points\n");
 % Precompute grid points
 idx = [find(track.cl_segs(:,2) == 0, 1); find(track.cl_segs(:,2) ~= 0)];
 distance = [0; cumsum(track.cl_segs(:,1))];
@@ -128,7 +157,7 @@ v2 = linspace(a_min, a_max, numPoints/2);
 
 % Reshape into vectors
 states = [X1(:), X2(:), X3(:), X4(:), X5(:)];
-states_z = states(1:800:end, :);
+states_z = states(1:1:end, :);
 inputs = [V1(:), V2(:)];
 
 % Precompute sizes
@@ -145,6 +174,7 @@ states_tilde = L_chol * states.';
 % Build KD-Tree once (outside loop)
 stateTree = KDTreeSearcher(states_tilde.');
 
+fprintf("\tIterate over the Grid Points\n");
 % Iterate over theta values
 for k = 1:size(Theta_0.V, 1)
     theta = Theta_0.V(k);
@@ -200,8 +230,10 @@ for k = 1:size(Theta_0.V, 1)
 end
 rho_theta0=rho;
 %% Compute L_B_rho
+fprintf("Solving SDP for L_B_rho\n");
 %Compute the set Psi: Using results from the previous section
  % Iterate over subset of states
+fprintf("\tDefining the set Psi\n");
 for i = 1:numStates_z
     z = states_z(i, :).';  % Single z point
     z_tilde = L_chol * z;  % Transform z
@@ -232,40 +264,67 @@ end
 %Set up the SDP
 gamma=sdpvar(1);
 obj=gamma;
+fprintf("\tConstruct the LMI\n");
 con=construct_lmi_L_B(gamma,Psi,P,Theta_0,h_value,n,m);
-diagnostics = optimize(con,obj);
+fprintf("\tSolve the SDP\n");
+diagnostics = optimize(con,obj,ops);
 L_B_rho=value(gamma);
+if strcmp(diagnostics.info,'Successfully solved (SeDuMi)')
+    fprintf('SDP successfully solved!\n');
+else
+    fprintf('Solving SDP failed. Please try again.\n');
+end
 %% Compute d_bar
+fprintf("Solving SDP for d_bar");
 gamma=sdpvar(1);
 obj=gamma;
+fprintf("\tConstruct the LMI\n");
 con=construct_lmi_d(gamma,P,D);
-diagnostics = optimize(con,obj);
+fprintf("\tSolve the SDP\n");
+diagnostics = optimize(con,obj,ops);
 d_bar=value(gamma);
+if strcmp(diagnostics.info,'Successfully solved (SeDuMi)')
+    fprintf('SDP successfully solved!\n');
+else
+    fprintf('Solving SDP failed. Please try again.\n');
+end
 %% Compute c_j
+fprintf("Solving SDP for c_j\n");
 gamma=sdpvar(1);
 c=[];
 con=[];
+fprintf("\tIterate over constraints\n");
 for i=1:size(L,1)
     obj=gamma;
     con=[(L(i,m+1:end)+L(i,1:m)*K).'*(L(i,m+1:end)+L(i,1:m)*K)-gamma*P<=0;gamma>=0];
-    diagnostics = optimize(con,obj);
+    fprintf("\tSolving LMI number %d \n",i);
+    diagnostics = optimize(con,obj,ops);
+    if strcmp(diagnostics.info,'Successfully solved (SeDuMi)')
+        fprintf('\tSDP successfully solved!\n');
+    else
+        fprintf('\tSolving SDP failed. Please try again.\n');
+    end
     c=[c;value(gamma)];
 end
 %% Compute the parameter update gain mu
+fprintf("Compute the parameter update gain mu\n");
 options = optimset('Display','off');
 [test,fval] = fmincon(@(x) 1/getDsq(x,h_value),[1;1],...
     L_u,l_u,[],[],[],[],[],options);
 mu = floor(fval);
 %% Terminal set
+fprintf("Compute the terminal set\n");
 s_s=track.cl_segs(1,1)+track.cl_segs(2,1)+track.cl_segs(3,1)/2;
 x_s=[s_s;0;0;1;0];
 u_s=[0;0];
+fprintf("\tCheck if the Point is a steady state \n");
 if all(x_s== system_f(u_s(2), x_s(5), x_s(3), x_s(2), h_value, eval_kappa(x_s(1), track), l_f_value, l_r_value, x_s(1), theta, u_s(1), x_s(4)))
     disp("It is a steady state!")
 end
 %c_xs
 c_xs=min([-(L*[u_s;x_s]-l)./c;delta_loc]);
 %Check the scalar condition 
+fprintf("\tCheck the scalar condition \n")
 L_theta0=eta_0*L_B_rho;
 w_theta0=[];
 for i=1:size(Theta_0.V,2)
@@ -278,6 +337,23 @@ if rho_theta0+L_theta0+c_xs*w_theta0D_s<=1
 else
     disp("The terminal set condition is not satisfied")
 end
+
+%% Save the results to a mat file
+fprintf("\tSave the results\n")
+save("RALMPC_OfflineCompuation",'K','P','rho_theta0','L_B_rho','delta_loc','mu','d_bar',"c_xs","L","l",'theta_0','eta_0','Theta_0')
+
+
+
+
+
+
+
+
+
+
+
+
+
 %% Help function 
 function [A_grid,B_grid]=gridding(track,con_x_lb,con_x_ub,Theta_0,accuracy)
 idx=[find(track.cl_segs(:,2)==0,1);find(track.cl_segs(:,2)~=0)];
