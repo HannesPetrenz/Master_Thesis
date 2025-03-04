@@ -117,7 +117,7 @@ for ii = 1:mpciterations % maximal number of iterations
     xmeasure=simulation(x(:,end),u_cl,theta_star,D,h_value,n);
     %New initial solution for the optimization
     u_init = controller_K(u_s,x_s(1),x_s(2))*(X_bar_OL{end}(:,end)-x_s)+u_s;
-    x_init = system_f(h_value,theta_bar_t{end}(1),theta_bar_t{end}(2),u_init,X_bar_OL{end}(1,end),X_bar_OL{end}(2,end));
+    x_init = system_f(theta_bar_t{end}(1),theta_bar_t{end}(2),u_init,X_bar_OL{end}(1,end),X_bar_OL{end}(2,end));
     s_init=rho_theta_t{end}*S_OL{end}(end)+max(uncertainty_w_deltaThetaD(eta_t{end},S_OL{end}(end),X_bar_OL{end}(1,end),X_bar_OL{end}(2,end)));
     w_init=max(uncertainty_w_deltaThetaD(eta_t{end},S_OL{end}(end),X_bar_OL{end}(1,end),X_bar_OL{end}(2,end)));
     y_init=[y_OL(n+1:n*(N+1));x_init;y_OL(n*(N+1)+n+1:n*(N+1)+n*(N+1));x_init;y_OL(n*(N+1)+n*(N+1)+m+1:n*(N+1)+n*(N+1)+m*N);u_init;y_OL(n*(N+1)+n*(N+1)+m*N+1+1:n*(N+1)+n*(N+1)+m*N+N+1);s_init;y_OL(n*(N+1)+n*(N+1)+m*N+N+1+1+1:end);w_init];
@@ -174,7 +174,7 @@ for k=1:N
     x_bar_new=x_bar(k*n+1:(k+1)*n);        
     u_bar_k=u_bar((k-1)*m+1:k*m);
     %dynamic constraint
-    ceqnew=x_bar_new-system_f(h,theta_bar(1),theta_bar(2),u_bar_k,x_bar_k(1),x_bar_k(2));
+    ceqnew=x_bar_new-system_f(theta_bar(1),theta_bar(2),u_bar_k,x_bar_k(1),x_bar_k(2));
     con = [con; ceqnew];
 end
 % dynmaics for x_hat
@@ -186,7 +186,7 @@ for k=1:N
     x_bar_k=x_bar((k-1)*n+1:k*n);
     u_hat_k=controller_K(u_bar_k,x_bar_k(1),x_bar_k(2))*(x_hat_k-x_bar_k)+u_bar_k;
     %dynamic constraint
-    ceqnew=x_hat_new-system_f(h,theta_hat(1),theta_hat(2),u_hat_k,x_hat_k(1),x_hat_k(2));
+    ceqnew=x_hat_new-system_f(theta_hat(1),theta_hat(2),u_hat_k,x_hat_k(1),x_hat_k(2));
     con = [con; ceqnew];
 end
 %dynamic s and upper bound w
@@ -259,7 +259,7 @@ end
 function x_kplus=simulation(x_k,u_k,theta_star,D,h,n)
     w = D.V(1,:)';
     disturbance=(1-2*rand(n,1)).*w;
-    x_kplus=system_f(h,theta_star(1),theta_star(2),u_k,x_k(1),x_k(2))+disturbance;
+    x_kplus=system_f(theta_star(1),theta_star(2),u_k,x_k(1),x_k(2))+disturbance;
 end
 
 function [theta_bar_t,eta_t,Theta_HC_t,Delta]=get_updatehypercube(xmeasure,x_tminus,u_tminus,theta_bar_t,eta_t,Theta_HC0,Theta_HC_t,Delta,D,options,B_p,h_value,p)
@@ -274,8 +274,8 @@ function [theta_bar_t,eta_t,Theta_HC_t,Delta]=get_updatehypercube(xmeasure,x_tmi
         Delta{i}=Delta{i+1};
     end 
     %Compute the latest Delta
-    h_delta = h_w - H_w*(xmeasure - system_f(h_value,0,0,u_tminus,x_tminus(1),x_tminus(2)));
-    H_delta = -H_w*system_G(h_value,x_tminus(1),x_tminus(2));
+    h_delta = h_w - H_w*(xmeasure - system_f(0,0,u_tminus,x_tminus(1),x_tminus(2)));
+    H_delta = -H_w*system_G(x_tminus(1),x_tminus(2));
     Delta{end} = Polyhedron(H_delta,h_delta);
     Delta{end}.minHRep;
     %Compute Theta_M_t
@@ -314,8 +314,8 @@ function theta_hat_t=LMSpointestimate(xmeasure,x_tminus,u_tminus,Theta_HC_t,thet
 %This function performs the point estimate
     theta_hat_tminus=theta_hat_t;
     %predicted state
-    x_hat_1t=system_f(h_value,theta_hat_tminus(1),theta_hat_tminus(2),u_tminus,x_tminus(1),x_tminus(2));
+    x_hat_1t=system_f(theta_hat_tminus(1),theta_hat_tminus(2),u_tminus,x_tminus(1),x_tminus(2));
     %Update theta_tilde
-    theta_tilde_t = theta_hat_tminus + mu*system_G(h_value,x_tminus(1),x_tminus(2))*(xmeasure-x_hat_1t);
+    theta_tilde_t = theta_hat_tminus + mu*system_G(x_tminus(1),x_tminus(2))*(xmeasure-x_hat_1t);
     [theta_hat_t,~] = fmincon(@(theta) norm(theta-theta_tilde_t),zeros(p,1),Theta_HC_t.A,Theta_HC_t.b,[],[],[],[],[],options);
 end

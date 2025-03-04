@@ -10,11 +10,10 @@ syms s
 n=2;
 m=1;
 h_value=0.05; %stepsize
-accuracy =10;
+accuracy =6;
 Q = 0.1*eye(n);
 R = eye(m);
 rho = 0.996;
-delta_loc=22.81;
 eps=10^-6;%epsilion for the sqrt derivative. Solves the numerical problem with sqrt optimization
 %% Define the model
 x_1kplus=x_1k+h*(0.5*(1+x_1k)*u_k-x_2k*theta_1);
@@ -52,26 +51,29 @@ L_u = kron(eye(m), [-1; 1]);
 l_u = [-u_min; u_max];
 L_x = kron(eye(n), [-1; 1]);
 l_x = [-x1_min; x1_max; -x2_min; x2_max];
-
+L_x=[-10,0;10,0;0,-10;0,10];
+l_x=ones(2^n,1);
+L_u=[-0.5;0.5];
+l_u=ones(2^m,1);
 % Combined state and input constraints
 L = [L_u, zeros(size(L_u, 1), size(L_x, 2));
      zeros(size(L_x, 1), size(L_u, 2)), L_x];
 l = [l_u; l_x];
 
 % Compute upper and lower bound constraints
-con_u_lb = -l_u(1:2:end);
-con_u_ub = l_u(2:2:end);
-con_x_lb = -l_x(1:2:end);
-con_x_ub = l_x(2:2:end);
+con_u_lb = u_min;
+con_u_ub = u_max;
+con_x_lb = [x1_min;x2_min];
+con_x_ub = [x1_max;x2_max];
 %% Parametric Uncertainty
 HB_p = [1, 0; -1,0;0,1;0,-1];
 hB_p = [1; 1;1;1];
 B_p = Polyhedron(HB_p, hB_p);
 theta_0 = [1.01;0.99];
-eta_0 = 0.00000000001;%%%%%%%0.01;
+eta_0 = 0.01;
 Theta_0 = theta_0 + eta_0 * B_p;
 %% Additive Disturbance 
-D =0.00000000001*10^-4*B_p;%%%%%% 0.5*10^-4*B_p;
+D =0.5*10^-4*B_p;
 %% Set up optimization problem
 fprintf("Computing P and K\n");
 % Define decision variables
@@ -94,13 +96,9 @@ ops = sdpsettings('solver', 'sdpt3', 'verbose', 1);
 % Define objective function
 obj = -log(det(X));
 
-% Compute system matrices via gridding
-fprintf("\tCompute system matrices via gridding\n");
-[A_grid,B_grid,Y_grid]=gridding(con_u_lb,con_u_ub,con_x_lb,con_x_ub,Theta_0,accuracy,Y_0,Y_1,Y_2,Y_3,Y_4,Y_5,Y_6,Y_7,Y_8,Y_9,delta_fun);
-
 % Compute constraints for the Linear Matrix Inequalities (LMI)
 fprintf("\tCompute constraints for the LMI\n");
-con=construct_lmi_constrain(X,Y_grid,A_grid,B_grid,rho,L,m);
+[con]=construct_lmi_controller(rho,con_u_lb,con_u_ub,con_x_lb,con_x_ub,L,Theta_0,accuracy,X,Y_0,Y_1,Y_2,Y_3,Y_4,Y_5,Y_6,Y_7,Y_8,Y_9,delta_fun,m);
 
 % Solve the optimization problem
 fprintf("\t Solve the SDP\n");
@@ -108,8 +106,9 @@ diagnostics = optimize(con, obj,ops);
 %check the feasibility
 X = value(X);
 Y = value(Y_0)+delta(1)*value(Y_1)+delta(2)*value(Y_2)+delta(3)*value(Y_3)+delta(4)*value(Y_4)+delta(5)*value(Y_5)+delta(6)*value(Y_6)+delta(7)*value(Y_7)+delta(8)*value(Y_8)+delta(9)*value(Y_9);
-con=check_lmi_constrain(X,Y,con_u_lb,con_u_ub,con_x_lb,con_x_ub,Theta_0,3*accuracy,rho,L,m,z1,z2,v)
-if ~any(con==0)
+fprintf("\t Check the solution\n");
+con=check_lmi_constrain(X,Y,con_u_lb,con_u_ub,con_x_lb,con_x_ub,Theta_0,3*accuracy,rho,L,m,z1,z2,v);
+if ~any(con==0) && min(real(eig(X)))>0
     fprintf('SDP successfully solved!\n');
 else
     fprintf('Solving SDP failed. Please try again.\n');
@@ -122,20 +121,25 @@ matlabFunction(K,"File","controller_K");
 
 %% Compute rho and delta_loc
 fprintf("Searching delta_loc\n");
-rho_theta0=rho;%0.9997   ;
-[rho_theta0,delta_loc,Psi]=check_contraction(rho_theta0,delta_loc,P,L_u,l_u,con_u_lb,con_u_ub,con_x_lb,con_x_ub,accuracy,Theta_0);
+delta_loc=22.81;
+delta_loc=23.8689;
+[rho_theta0,delta_loc,Psi]=compute_contraction(delta_loc,P,L_x,l_x,L_u,l_u,con_u_lb,con_u_ub,con_x_lb,con_x_ub,accuracy,theta_0);
 %% Compute L_B_rho
 fprintf("Solving SDP for L_B_rho\n");
 %Compute the set Psi: Using results from the previous section
 % Define the range and number of grid points for each state
 %Set up the SDP
 gamma=sdpvar(1);
-obj=gamma;
+obj=gamma^2;
 fprintf("\tConstruct the LMI\n");
-con=construct_lmi_L_B(gamma,Psi,P,B_p,n);
+con=construct_lmi_L_B(Psi,P,B_p,n);
 fprintf("\tSolve the SDP\n");
-diagnostics = optimize(con,obj,ops);
-L_B_rho=value(gamma);
+
+options = optimset('Display','off');
+[test,fval] = fmincon(@(x) x,1,...
+    -eye(length(con),1),-con,[],[],[],[],[],options);
+%diagnostics = optimize(con,obj,ops);
+L_B_rho=test;
 if strcmp(diagnostics.info,'Successfully solved (SDPT3)')
     fprintf('SDP successfully solved!\n');
 else
@@ -204,7 +208,22 @@ for j=1:size(B_p.V,1)
 end
 matlabFunction(w_delta_Theta_D, "File", "uncertainty_w_deltaThetaD");
 %% Save the parameter
-save("Parameter_Offline.mat","P","n","m","h_value","Q","R","rho_theta0","delta_loc","mu","c","c_xs","c_alpha","Theta_0","eta_0","theta_0","L","l","x_s","u_s","D","d_bar","L_B_rho","eps","B_p")
+Y_0=value(Y_0);Y_1=value(Y_1);Y_2=value(Y_2);Y_3=value(Y_3);Y_4=value(Y_4);Y_5=value(Y_5);Y_6=value(Y_6);Y_7=value(Y_7);Y_8=value(Y_8);Y_9=value(Y_9);
+save("Parameter_Offline.mat","P","n","m","h_value","Q","R","rho_theta0","delta_loc","mu","c","c_xs","c_alpha","Theta_0","eta_0","theta_0","L","l","x_s","u_s","D","d_bar","L_B_rho","eps","B_p","Y_0","Y_1","Y_2","Y_3","Y_4","Y_5","Y_6","Y_7","Y_8","Y_9")
+
+
+R = chol(P);
+t = linspace(0, 2*pi, 100); % or any high number to make curve smooth
+z = [cos(t); sin(t)];
+ellipse = inv(R) * z;
+K = controller_K(2,0.1000,0.1000);
+PL=Polyhedron([L_x;zeros(n,2*m)]+[zeros(2*n,m);L_u].*K,[1;1;1;1;1;1]);
+plot(PL)
+ hold on
+plot(ellipse(1,:), ellipse(2,:),'g')
+
+
+
 %% Help functions
 function compute_jacobian(f,x,u)
 A=jacobian(f,x);
@@ -215,62 +234,68 @@ B=subs(B);
 matlabFunction(B,"File","jacobian_B");
 end
 
-function [A_grid,B_grid,Y_grid]=gridding(con_u_lb,con_u_ub,con_x_lb,con_x_ub,Theta_0,accuracy,Y_0,Y_1,Y_2,Y_3,Y_4,Y_5,Y_6,Y_7,Y_8,Y_9,delta)
-    count=0;   
-    for j=1:size(Theta_0.V(:,1),1)
-        for v=linspace(con_u_lb,con_u_ub,accuracy)
-            for z1=linspace(con_x_lb(1),con_x_ub(1),accuracy) 
-                for z2=linspace(con_x_lb(2),con_x_ub(2),accuracy)
+function [con]=construct_lmi_controller(rho,con_u_lb,con_u_ub,con_x_lb,con_x_ub,L,Theta_0,accuracy,X,Y_0,Y_1,Y_2,Y_3,Y_4,Y_5,Y_6,Y_7,Y_8,Y_9,delta,m)
+    con=[];     
+    for v=linspace(con_u_lb,con_u_ub,accuracy)
+        for z1=linspace(con_x_lb(1),con_x_ub(1),accuracy) 
+            for z2=linspace(con_x_lb(2),con_x_ub(2),accuracy)
+                del=delta(v,z1,z2);
+                Y=Y_0+del(1)*Y_1+del(2)*Y_2+del(3)*Y_3+del(4)*Y_4+del(5)*Y_5+del(6)*Y_6+del(7)*Y_7+del(8)*Y_8+del(9)*Y_9;
+                for j=1:size(Theta_0.V(:,1),1)
                     theta_1=Theta_0.V(j,1);
                     theta_2=Theta_0.V(j,2);
                     A = jacobian_A(theta_1,theta_2,v);
                     B = jacobian_B(z1,z2);
-                    del=delta(v,z1,z2);
-                    Y=Y_0+del(1)*Y_1+del(2)*Y_2+del(3)*Y_3+del(4)*Y_4+del(5)*Y_5+del(6)*Y_6+del(7)*Y_7+del(8)*Y_8+del(9)*Y_9;
-                    count=count+1;
-                    A_grid{count}=A;
-                    B_grid{count}=B;
-                    Y_grid{count}=Y;
-                end
+                    con=[con;[rho^2*X,(A*X+B*Y)';(A*X+B*Y),X]>=0];
+                end      
             end
         end
     end
-end
-
-function con=construct_lmi_constrain(X,Y_grid,A_grid,B_grid,rho,L,m)
-    con=[];
-    for i=1:size(A_grid,2)
-        con=[con;[rho^2*X,(A_grid{i}*X+B_grid{i}*Y_grid{i}).';(A_grid{i}*X+B_grid{i}*Y_grid{i}),X]>=0];    
-        for j=1:size(L,1)
-            con=[con;[1,(L(j,m+1:end)*X+L(j,1:m)*Y_grid{i});(L(j,m+1:end)*X+L(j,1:m)*Y_grid{i}).',X]>=0];
+    for v=linspace(con_u_lb,con_u_ub,2)
+        for z1=linspace(con_x_lb(1),con_x_ub(1),2) 
+            for z2=linspace(con_x_lb(2),con_x_ub(2),2)
+                for j=1:size(L,1)
+                    del=delta(v,z1,z2);
+                    Y=Y_0+del(1)*Y_1+del(2)*Y_2+del(3)*Y_3+del(4)*Y_4+del(5)*Y_5+del(6)*Y_6+del(7)*Y_7+del(8)*Y_8+del(9)*Y_9;
+                    con=[con;[1,(L(j,m+1:end)*X+L(j,1:m)*Y);(L(j,m+1:end)*X+L(j,1:m)*Y).',X]>=0];
+                end
+            end
         end
     end
 end
 
 function con=check_lmi_constrain(X,Y,con_u_lb,con_u_ub,con_x_lb,con_x_ub,Theta_0,accuracy,rho,L,m,z1,z2,v)
-    count=0;
-    con=[];
-    for j=1:size(Theta_0.V(:,1),1)
-        for v_value=linspace(con_u_lb,con_u_ub,accuracy)
-            for z1_value=linspace(con_x_lb(1),con_x_ub(1),accuracy) 
-                for z2_value=linspace(con_x_lb(2),con_x_ub(2),accuracy)
+    con=[];     
+    accuracy=accuracy;
+    for v_value=linspace(con_u_lb,con_u_ub,accuracy)
+        for z1_value=linspace(con_x_lb(1),con_x_ub(1),accuracy) 
+            for z2_value=linspace(con_x_lb(2),con_x_ub(2),accuracy)
+                Y_value=double(subs(Y,[z1,z2,v],[z1_value,z2_value,v_value]));
+                for j=1:size(Theta_0.V(:,1),1)
                     theta_1=Theta_0.V(j,1);
                     theta_2=Theta_0.V(j,2);
                     A = jacobian_A(theta_1,theta_2,v_value);
-                    B = jacobian_B(z1_value,z2_value);  
-                    Y_value=double(subs(Y,[z1,z2,v],[z1_value,z2_value,v_value]));
-                    con=[con;max(real(eig([rho^2*X,(A*X+B*Y_value).';(A*X+B*Y_value),X])))>=0];    
-                    for i=1:size(L,1)
-                        con=[con;max(real(eig([1,(L(i,m+1:end)*X+L(i,1:m)*Y_value);(L(i,m+1:end)*X+L(i,1:m)*Y_value).',X])))>=0];
-                    end
+                    B = jacobian_B(z1_value,z2_value);
+                    con=[con;min(real(eig([rho^2*X,(A*X+B*Y_value).';(A*X+B*Y_value),X])))>=0]; 
+                end
+                
+            end
+        end
+    end
+    for v_value=linspace(con_u_lb,con_u_ub,accuracy)
+        for z1_value=linspace(con_x_lb(1),con_x_ub(1),accuracy) 
+            for z2_value=linspace(con_x_lb(2),con_x_ub(2),accuracy)
+                Y_value=double(subs(Y,[z1,z2,v],[z1_value,z2_value,v_value]));
+                for j=1:size(L,1)
+                    con=[con;min(real(eig([1,(L(j,m+1:end)*X+L(j,1:m)*Y_value);(L(j,m+1:end)*X+L(j,1:m)*Y_value).',X])))>=0];
                 end
             end
         end
     end
 end
 
-function [rho_theta0,delta_loc,Psi]=check_contraction(rho,delta_loc,P,L_u,l_u,con_u_lb,con_u_ub,con_x_lb,con_x_ub,numPoints,Theta_0)
-    cond=true;
+function [rho_theta0,delta_loc,Psi]=compute_contraction(delta_loc,P,L_x,l_x,L_u,l_u,con_u_lb,con_u_ub,con_x_lb,con_x_ub,numPoints,theta_0)
+    rho_theta0=0;
     Psi=[];
     % Precompute grid points
     x1 = linspace(con_x_lb(1), con_x_ub(1), numPoints);
@@ -299,86 +324,64 @@ function [rho_theta0,delta_loc,Psi]=check_contraction(rho,delta_loc,P,L_u,l_u,co
     % Build KD-Tree once (outside loop)
     stateTree = KDTreeSearcher(states_tilde.');
     
-    % Iterate over theta values
-    for k = 1:size(Theta_0.V, 1)
-        theta = Theta_0.V(k,:);
+    % Iterate over subset of states
+    for i = 1:numStates_z
+        z = states_z(i, :).';  % Single z point
+        z_tilde = L_chol * z;  % Transform z
+
+        % Find nearby states x using KD-Tree
+        idx = rangesearch(stateTree, z_tilde.', delta_loc);
+        x = states(idx{1}, :).';  % All x that satisfies V_delta(x,z)≤delta_loc
+        for j=1:numInputs 
+            v=inputs(j);
+            % Compute u for all valid (x, z, v)
+            u_xz = controller_K(v,z(1),z(2)) * (x - z);  % Matrix operation
+            % Expand `inputs` across `x` to efficiently compute `U`
+            U = u_xz+v;
     
-        % Iterate over subset of states
-        for i = 1:numStates_z
-            z = states_z(i, :).';  % Single z point
-            z_tilde = L_chol * z;  % Transform z
+            % Check constraint L_u * u - l_u <= 0
+            valid_mask = all(L_u * U <= l_u, 1); 
     
-            % Find nearby states x using KD-Tree
-            idx = rangesearch(stateTree, z_tilde.', delta_loc);
-            x = states(idx{1}, :).';  % All x that satisfies V_delta(x,z)≤delta_loc
-            for j=1:numInputs 
-                v=inputs(j);
-                % Compute u for all valid (x, z, v)
-                u_xz = controller_K(v,z(1),z(2)) * (x - z);  % Matrix operation
-                % Expand `inputs` across `x` to efficiently compute `U`
-                U = u_xz+v;
-        
-                % Check constraint L_u * u - l_u <= 0
-                valid_mask = all(L_u * U <= l_u, 1); 
-        
-                % Extract valid indices
-                valid_idx = find(valid_mask);
-        
-                % Ensure valid_x and valid_U have the same dimensions
-                valid_U = U(:, valid_idx);
-                valid_x = x(:, valid_idx);  % Select only valid entries
-                %Compute Psi
-                Psi=[Psi,[valid_x;repmat(z,1,size(valid_x,2));repmat(v,1,size(valid_x,2))]];
-                % Iterate over valid (u, x)         
-                for j = 1:size(valid_U, 2)
-                    u_ = valid_U(:, j);
-                    x_ = valid_x(:, j);
-                    % Compute next states
-                    z_plus = system_f(theta(1),theta(2),v,z(1),z(2));
-                    x_plus = system_f(theta(1),theta(2),u_,x_(1),x_(2));
-                    % Check contraction condition from Assumption (10c)
-                    if sqrt((x_plus - z_plus).' * P * (x_plus - z_plus)) - rho * sqrt((x_ - z).' * P * (x_ - z)) > 0
-                        disp("Condition not satisfied. Decrease the size of delta_loc");
-                        cond = false;
-                        break
-                    end     
-                end
-                if cond==false
-                    break
-                end
-            end
-            if cond==false
-                break
+            % Extract valid indices
+            valid_idx = find(valid_mask);
+    
+            % Ensure valid_x and valid_U have the same dimensions
+            valid_U = U(:, valid_idx);
+            valid_x = x(:, valid_idx);  % Select only valid entries
+            % Iterate over valid (u, x)         
+            for j = 1:size(valid_U, 2)
+                u_ = valid_U(:, j);
+                x_ = valid_x(:, j);
+                % Compute next states
+                z_plus = system_f(theta_0(1),theta_0(2),v,z(1),z(2));
+                x_plus = system_f(theta_0(1),theta_0(2),u_,x_(1),x_(2));
+                %Check if the next state is leaving the constraints
+                if all(L_x*z_plus-l_x<=0) && all(L_x*x_plus-l_x<=0)
+                        Psi=[Psi,[x_;z;v]]; %Add a value to set Psi
+                    % Compute contraction rate
+                    if ((x_ - z).' * P * (x_ - z)) ~= 0 
+                        rho_theta0=max([rho_theta0,sqrt((x_plus - z_plus).' * P * (x_plus - z_plus))/sqrt((x_ - z).' * P * (x_ - z))]);
+                    end  
+                end        
             end
         end
-        if cond==false
-            break
-        end
-    end
-    %Set the return value
-    if cond==false
-            rho_theta0=[];
-            delta_loc=[];
-    else
-        rho_theta0=rho;
+
     end
 end
 
-function con=construct_lmi_L_B(gamma,Psi,P,B_p,n)
+function con=construct_lmi_L_B(Psi,P,B_p,n)
 con=[];
-    randomIndices = randperm(length(Psi), 10000);
-    Psi = Psi(:,randomIndices);
     for i=1:size(Psi,2)
             z=Psi(n+1:2*n,i);
             x=Psi(1:n,i);
             G_x = system_G(x(1),x(2));
             G_z = system_G(z(1),z(2));
             for j=1:size(B_p.V,1)
-                con=[con;[0>=gamma^2*(x-z).'*P*(x-z)-((G_x-G_z)*B_p.V(j,:).').'*P*((G_x-G_z)*B_p.V(j,:).')]];
+                if (x-z)~=0
+                    con=[con;(((G_x-G_z)*B_p.V(j,:).').'*P*((G_x-G_z)*B_p.V(j,:).'))/((x-z).'*P*(x-z))];
+                end
             end
     end
-    con=[con;gamma>=0];
-   
 end
 
 function con=computing_dbar(P,D)
