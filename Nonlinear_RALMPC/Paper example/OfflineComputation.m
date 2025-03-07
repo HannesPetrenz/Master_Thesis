@@ -6,11 +6,12 @@ syms h
 syms theta_1 theta_2 eta_t 
 syms v z1 z2
 syms s
+
 %% Define constants
 n=2;
 m=1;
 h_value=0.05; %stepsize
-accuracy =6;
+accuracy =6;%12;
 Q = 0.1*eye(n);
 R = eye(m);
 rho = 0.996;
@@ -121,30 +122,17 @@ matlabFunction(K,"File","controller_K");
 
 %% Compute rho and delta_loc
 fprintf("Searching delta_loc\n");
-delta_loc=22.81;
-delta_loc=23.8689;
+%delta_loc=22.81;
+delta_loc=sqrt(23.8689);
+accuracy=6;%10;
 [rho_theta0,delta_loc,Psi]=compute_contraction(delta_loc,P,L_x,l_x,L_u,l_u,con_u_lb,con_u_ub,con_x_lb,con_x_ub,accuracy,theta_0);
 %% Compute L_B_rho
-fprintf("Solving SDP for L_B_rho\n");
+ fprintf("Computing L_B_rho\n");
 %Compute the set Psi: Using results from the previous section
 % Define the range and number of grid points for each state
 %Set up the SDP
-gamma=sdpvar(1);
-obj=gamma^2;
-fprintf("\tConstruct the LMI\n");
-con=construct_lmi_L_B(Psi,P,B_p,n);
-fprintf("\tSolve the SDP\n");
+L_B_rho=compute_L_B(Psi,P,B_p,n);
 
-options = optimset('Display','off');
-[test,fval] = fmincon(@(x) x,1,...
-    -eye(length(con),1),-con,[],[],[],[],[],options);
-%diagnostics = optimize(con,obj,ops);
-L_B_rho=test;
-if strcmp(diagnostics.info,'Successfully solved (SDPT3)')
-    fprintf('SDP successfully solved!\n');
-else
-    fprintf('Solving SDP failed. Please try again.\n');
-end
 %% Compute d_bar
 fprintf("Solving SDP for d_bar");
 d_bar=computing_dbar(P,D);
@@ -154,17 +142,11 @@ gamma=sdpvar(1);
 c=[];
 con=[];
 fprintf("\tIterate over constraints\n");
+Psi_subset = Psi(:, randperm(size(Psi, 2), round(size(Psi, 2)*0.5)));
 for i=1:size(L,1)
     obj=gamma;
-    con=construct_lmi_c_j(gamma,Psi,P,L,l,n,i);
-    fprintf("\tSolving LMI number %d \n",i);
-    diagnostics = optimize(con,obj,ops);
-    if strcmp(diagnostics.info,'Successfully solved (SDPT3)')
-        fprintf('\tSDP successfully solved!\n');
-    else
-        fprintf('\tSolving SDP failed. Please try again.\n');
-    end
-    c=[c;value(gamma)];
+    c_j=compute_c_j(Psi,P,L,l,n,i   );
+    c=[c;c_j];
 end
 %% Compute the parameter update gain mu
 fprintf("Compute the parameter update gain mu\n");
@@ -200,30 +182,16 @@ end
 K_s= controller_K(u_s,x_s(1),x_s(2));
 c_alpha=min(eig(Q+K_s.'*R*K_s))/((1-(rho_theta0+L_theta0)^2)*max(eig(P)));
 %% Compute the function for the uncertainty discription 
-w_delta_Theta_D=[];
+w_Theta =[];
 for j=1:size(B_p.V,1)
     L_Theta=eta_t*L_B_rho;
     G_z=system_G(z1,z2);
-    w_delta_Theta_D=[w_delta_Theta_D;eta_t*sqrt((G_z*B_p.V(j,:).').'*P*(G_z*B_p.V(j,:).')+eps)+d_bar+L_Theta*s];
+    w_Theta=[w_Theta;eta_t*sqrt((G_z*B_p.V(j,:).').'*P*(G_z*B_p.V(j,:).'))];
 end
-matlabFunction(w_delta_Theta_D, "File", "uncertainty_w_deltaThetaD");
+matlabFunction(w_Theta, "File", "uncertainty_w_Theta");
 %% Save the parameter
 Y_0=value(Y_0);Y_1=value(Y_1);Y_2=value(Y_2);Y_3=value(Y_3);Y_4=value(Y_4);Y_5=value(Y_5);Y_6=value(Y_6);Y_7=value(Y_7);Y_8=value(Y_8);Y_9=value(Y_9);
 save("Parameter_Offline.mat","P","n","m","h_value","Q","R","rho_theta0","delta_loc","mu","c","c_xs","c_alpha","Theta_0","eta_0","theta_0","L","l","x_s","u_s","D","d_bar","L_B_rho","eps","B_p","Y_0","Y_1","Y_2","Y_3","Y_4","Y_5","Y_6","Y_7","Y_8","Y_9")
-
-
-R = chol(P);
-t = linspace(0, 2*pi, 100); % or any high number to make curve smooth
-z = [cos(t); sin(t)];
-ellipse = inv(R) * z;
-K = controller_K(2,0.1000,0.1000);
-PL=Polyhedron([L_x;zeros(n,2*m)]+[zeros(2*n,m);L_u].*K,[1;1;1;1;1;1]);
-plot(PL)
- hold on
-plot(ellipse(1,:), ellipse(2,:),'g')
-
-
-
 %% Help functions
 function compute_jacobian(f,x,u)
 A=jacobian(f,x);
@@ -296,6 +264,7 @@ end
 
 function [rho_theta0,delta_loc,Psi]=compute_contraction(delta_loc,P,L_x,l_x,L_u,l_u,con_u_lb,con_u_ub,con_x_lb,con_x_ub,numPoints,theta_0)
     rho_theta0=0;
+    num_points=500000;
     Psi=[];
     % Precompute grid points
     x1 = linspace(con_x_lb(1), con_x_ub(1), numPoints);
@@ -315,61 +284,39 @@ function [rho_theta0,delta_loc,Psi]=compute_contraction(delta_loc,P,L_x,l_x,L_u,
     numStates_z = size(states_z, 1);
     numInputs = size(inputs, 1);
     
-    % Precompute Cholesky decomposition
-    L_chol = chol(P);
-    
-    % Transform all states once
-    states_tilde = L_chol * states.';
-    
-    % Build KD-Tree once (outside loop)
-    stateTree = KDTreeSearcher(states_tilde.');
     
     % Iterate over subset of states
     for i = 1:numStates_z
         z = states_z(i, :).';  % Single z point
-        z_tilde = L_chol * z;  % Transform z
-
-        % Find nearby states x using KD-Tree
-        idx = rangesearch(stateTree, z_tilde.', delta_loc);
-        x = states(idx{1}, :).';  % All x that satisfies V_delta(x,z)≤delta_loc
+        % Randomly sample x in ||x-z||_P<=delta_loc
+        x_samples = sampleEllipsoid(P, z, delta_loc, num_points,L_x,l_x);
+        x_samples = [x_samples,z];
         for j=1:numInputs 
             v=inputs(j);
-            % Compute u for all valid (x, z, v)
-            u_xz = controller_K(v,z(1),z(2)) * (x - z);  % Matrix operation
-            % Expand `inputs` across `x` to efficiently compute `U`
-            U = u_xz+v;
-    
-            % Check constraint L_u * u - l_u <= 0
-            valid_mask = all(L_u * U <= l_u, 1); 
-    
-            % Extract valid indices
-            valid_idx = find(valid_mask);
-    
-            % Ensure valid_x and valid_U have the same dimensions
-            valid_U = U(:, valid_idx);
-            valid_x = x(:, valid_idx);  % Select only valid entries
-            % Iterate over valid (u, x)         
-            for j = 1:size(valid_U, 2)
-                u_ = valid_U(:, j);
-                x_ = valid_x(:, j);
-                % Compute next states
-                z_plus = system_f(theta_0(1),theta_0(2),v,z(1),z(2));
-                x_plus = system_f(theta_0(1),theta_0(2),u_,x_(1),x_(2));
-                %Check if the next state is leaving the constraints
-                if all(L_x*z_plus-l_x<=0) && all(L_x*x_plus-l_x<=0)
-                        Psi=[Psi,[x_;z;v]]; %Add a value to set Psi
-                    % Compute contraction rate
-                    if ((x_ - z).' * P * (x_ - z)) ~= 0 
-                        rho_theta0=max([rho_theta0,sqrt((x_plus - z_plus).' * P * (x_plus - z_plus))/sqrt((x_ - z).' * P * (x_ - z))]);
-                    end  
-                end        
+            z_plus = system_f(theta_0(1),theta_0(2),v,z(1),z(2)); %compute the next state z_plus
+
+            for k=1:length(x_samples) %iteration of the samples in x_sample
+                x=x_samples(:,k);
+                u = controller_K(v,z(1),z(2)) * (x - z)+v; %compute the controller u
+
+                if all(L_u * u <= l_u, 1) %Check input constraints
+                   x_plus = system_f(theta_0(1),theta_0(2),u,x(1),x(2));%compute the next state x_plus
+
+                   if all(L_x*z_plus-l_x<=0) && all(L_x*x_plus-l_x<=0) %Check if the next state are in the constrains 
+                            Psi=[Psi,[x;z;v]]; %Add a value to set Psi
+                        if ((x - z).' * P * (x - z)) ~= 0 
+                            %Compute the contraction rate
+                            rho_theta0=max([rho_theta0,sqrt((x_plus - z_plus).' * P * (x_plus - z_plus))/sqrt((x - z).' * P * (x - z))]);
+                        end  
+                   end
+                end
             end
         end
 
     end
 end
 
-function con=construct_lmi_L_B(Psi,P,B_p,n)
+function L_B_rho=compute_L_B(Psi,P,B_p,n)
 con=[];
     for i=1:size(Psi,2)
             z=Psi(n+1:2*n,i);
@@ -382,6 +329,7 @@ con=[];
                 end
             end
     end
+    L_B_rho=max(con);
 end
 
 function con=computing_dbar(P,D)
@@ -392,7 +340,7 @@ con=[];
     con=max(con);
 end
 
-function con=construct_lmi_c_j(gamma,Psi,P,L,l,n,j)
+function c_j=compute_c_j(Psi,P,L,l,n,j)
 con=[];
     for i=1:size(Psi,2)
             z=Psi(n+1:2*n,i);
@@ -402,12 +350,37 @@ con=[];
             h_x=L(j,:)*[u;x]-l(j,:);
             h_z=L(j,:)*[v;z]-l(j,:);
             V_delta=sqrt((x-z).'*P*(x-z));
-            con=[con;[0>=h_x-h_z-gamma*V_delta]];
+            con=[con;(h_x-h_z)/V_delta];
     end
-    con=[con;gamma>=0];
+    c_j=max(con);
 end
 
 function [y_sq] = getDsq(X)
     y = system_G(X(1),X(2));
     y_sq = norm(y)^2; 
+end
+
+function x = sampleEllipsoid(P, z, delta_loc, num_points,L_x,l_x)
+    % Generate random points inside an ellipsoid ||x - z||_P <= delta_loc
+    % P: Shape matrix (positive definite)
+    % z: Center of the ellipsoid (column vector)
+    % delta_loc: Scaling factor
+    % num_points: Number of points to sample
+    % Output: points (each column is a sampled point)
+
+    n = length(z);  % Dimension of space
+    
+    %Eigenvalues and transformation matrix 
+    [Q,D] = eig(P);
+    
+    %generate random number
+    randnumber=rand(n,num_points);
+    %scalings for cosinus and sinus
+    a=randnumber(1,:)*delta_loc/sqrt(D(1,1));
+    b=randnumber(1,:)*delta_loc/sqrt(D(2,2));
+
+    x= Q * [a .* cos(2*pi*randnumber(2,:)); b .* sin(2*pi*randnumber(2,:))] + z;
+
+    %Check constraints
+    x=x(:,all(L_x*x<=l_x));
 end

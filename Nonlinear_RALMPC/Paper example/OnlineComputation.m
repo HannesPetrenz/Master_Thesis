@@ -16,6 +16,7 @@ N=12;
 y=MX.sym('y',n*(N+1)+n*(N+1)+m*N+(N+1)+N);
 % Number of MPC iterations
 mpciterations = 1000;
+c_alpha=671.9418;
 %% Other Optimization Options
 options = optimset('Display','none',...
     'TolFun', 1e-10,...
@@ -29,10 +30,10 @@ theta_star=[1;1];
 theta_circle = linspace(0, 2*pi, 100);
 circle = [cos(theta_circle); sin(theta_circle)];
 %% MPC Initialization
-%nonlinear constraints (equality constraints)
-[con] = nonlinearconstraints(N, y, n, m,h_value,theta_0,theta_0,eta_0,rho_theta0,L,l,c,x_s,c_xs,P,p,eps);
-con_lb=[zeros(n*(N),1);zeros(n*(N),1);zeros((N),1);-inf*ones(2^p*(N),1);-inf*ones(r*N,1);-inf*ones(1,1)];
-con_ub=[zeros(n*(N),1);zeros(n*(N),1);zeros((N),1);zeros(2^p*(N),1);zeros(r*N,1);zeros(1,1)];
+%nonlinear constraints 
+[con] = nonlinearconstraints(N, y, n, m,h_value,theta_0,theta_0,eta_0,L_B_rho,rho_theta0,L,l,c,x_s,c_xs,P,p,d_bar,delta_loc);
+con_lb=[zeros(n*(N),1);zeros(n*(N),1);zeros((N),1);zeros((N),1);-inf*ones(r*N,1);-inf*ones(2,1)];
+con_ub=[zeros(n*(N),1);zeros(n*(N),1);zeros((N),1);zeros((N),1);zeros(r*N,1);zeros(2,1)];
 %input constraints: use lb, ub
 lb=[x0;-inf*ones(n*(N),1);x0;-inf*ones(n*(N),1);-inf*ones(m*(N),1);zeros(N+1,1);zeros(N,1)];
 ub=[x0;inf*ones(n*(N),1);x0;inf*ones(n*(N),1);inf*ones(m*(N),1);0;inf*ones((N),1);inf*ones((N),1)];
@@ -40,10 +41,10 @@ ub=[x0;inf*ones(n*(N),1);x0;inf*ones(n*(N),1);inf*ones(m*(N),1);0;inf*ones((N),1
 obj=costfunction(N, y, x_s, u_s, Q, R,P,n,c_alpha,m);
 %Option for casadi solver
 opts = struct;
-opts.ipopt.max_iter = 100000;  
-opts.ipopt.tol = 1e-10;           % Optimality tolerance
-opts.ipopt.dual_inf_tol = 1e-10;  % Dual infeasibility tolerance
-opts.ipopt.compl_inf_tol = 1e-10;
+opts.ipopt.tol = 1e-10;
+opts.ipopt.constr_viol_tol = 1e-15;
+opts.ipopt.acceptable_tol = 1e-10;
+opts.ipopt.max_iter =5000;
 opts.ipopt.print_level = 0;  % Suppress solver output
 opts.print_time = false;      % Disable timing information
 %Define the problem and the solver
@@ -87,7 +88,8 @@ for ii = 1:mpciterations % maximal number of iterations
         rho_theta_t{ii}=rho_theta0+(eta_0-eta_t{end})*L_B_rho;
     end
     % Update the constrain set and the optimization problem
-    [con] = nonlinearconstraints(N, y, n, m,h_value,theta_bar_t{end},theta_hat_t{end},eta_t{end},rho_theta_t{end},L,l,c,x_s,c_xs,P,p,eps);
+    [con] = nonlinearconstraints(N, y, n, m,h_value,theta_bar_t{end},theta_hat_t{end},eta_t{end},L_B_rho,rho_theta_t{end},L,l,c,x_s,c_xs,P,p,d_bar,delta_loc);
+    nlp = struct('x', y, 'f', obj, 'g', con);
     solver = nlpsol('solver', 'ipopt', nlp, opts);
     %Solve the optimization problem
     res = solver('x0' , y_init,... % solution guess
@@ -108,6 +110,12 @@ for ii = 1:mpciterations % maximal number of iterations
     X_hat_OL{ii}=reshape(y_OL(n*(N+1)+1:n*(N+1)+n*(N+1)),2,[]);
     U_bar_OL{ii}=y_OL(n*(N+1)+n*(N+1)+1:n*(N+1)+n*(N+1)+m*N);
     S_OL{ii}=y_OL(n*(N+1)+n*(N+1)+m*N+1:n*(N+1)+n*(N+1)+m*N+N+1);
+    %Check constraints
+    %[con] = nonlinearconstraints(N, y_OL, n, m,h_value,theta_bar_t{end},theta_hat_t{end},eta_t{end},L_B_rho,rho_theta_t{end},L,l,c,x_s,c_xs,P,p,d_bar,delta_loc);
+    %[con, ceq] = nonlinearconstraints_paper(N,y_OL,x_s,c,c_xs,L(:,m+1:end),L(:,1:m),rho_theta_t{end},d_bar,eta_t{end},L_B_rho,theta_bar_t{end},theta_hat_t{end},delta_loc,P,n,m,B_p);
+    epsilon=671.9418;
+    %cost = costfunction_paper(N, y_OL, x_s, u_s, Q, R, epsilon, P,n,m)
+    %cost = costfunction(N, y_OL, x_s, u_s, Q, R,P,n,c_alpha,m)
     %Close Loop
     u_cl=U_bar_OL{end}(1);
     x=[x,xmeasure];
@@ -118,8 +126,8 @@ for ii = 1:mpciterations % maximal number of iterations
     %New initial solution for the optimization
     u_init = controller_K(u_s,x_s(1),x_s(2))*(X_bar_OL{end}(:,end)-x_s)+u_s;
     x_init = system_f(theta_bar_t{end}(1),theta_bar_t{end}(2),u_init,X_bar_OL{end}(1,end),X_bar_OL{end}(2,end));
-    s_init=rho_theta_t{end}*S_OL{end}(end)+max(uncertainty_w_deltaThetaD(eta_t{end},S_OL{end}(end),X_bar_OL{end}(1,end),X_bar_OL{end}(2,end)));
-    w_init=max(uncertainty_w_deltaThetaD(eta_t{end},S_OL{end}(end),X_bar_OL{end}(1,end),X_bar_OL{end}(2,end)));
+    s_init=rho_theta_t{end}*S_OL{end}(end)+eta_t{end}*L_B_rho*S_OL{end}(end)+d_bar+max(uncertainty_w_Theta(eta_t{end},X_bar_OL{end}(1,end),X_bar_OL{end}(2,end)));
+    w_init=max(uncertainty_w_Theta(eta_t{end},X_bar_OL{end}(1,end),X_bar_OL{end}(2,end)));
     y_init=[y_OL(n+1:n*(N+1));x_init;y_OL(n*(N+1)+n+1:n*(N+1)+n*(N+1));x_init;y_OL(n*(N+1)+n*(N+1)+m+1:n*(N+1)+n*(N+1)+m*N);u_init;y_OL(n*(N+1)+n*(N+1)+m*N+1+1:n*(N+1)+n*(N+1)+m*N+N+1);s_init;y_OL(n*(N+1)+n*(N+1)+m*N+N+1+1+1:end);w_init];
 end
 %% Plot
@@ -160,65 +168,69 @@ grid on
 xlabel("time steps")
 ylabel("u_{cl}")
 %% MPC Help functions
-function [con] = nonlinearconstraints(N, y, n, m,h,theta_bar,theta_hat,eta_t,rho_thetat,L,l,c,x_s,c_xs,P,p,eps)
-% Introduce the equality constraints also for the terminal state  
-   x_bar=y(1:n*(N+1));
-   x_hat=y(n*(N+1)+1:n*(N+1)+n*(N+1));
-   u_bar=y(n*(N+1)+n*(N+1)+1:n*(N+1)+n*(N+1)+m*N);
-   s=y(n*(N+1)+n*(N+1)+m*N+1:n*(N+1)+n*(N+1)+m*N+N+1);
-   w=y(n*(N+1)+n*(N+1)+m*N+N+1+1:end);
-   con = [];
-% dynmaics for x_bar
-for k=1:N
-    x_bar_k=x_bar((k-1)*n+1:k*n);
-    x_bar_new=x_bar(k*n+1:(k+1)*n);        
-    u_bar_k=u_bar((k-1)*m+1:k*m);
-    %dynamic constraint
-    ceqnew=x_bar_new-system_f(theta_bar(1),theta_bar(2),u_bar_k,x_bar_k(1),x_bar_k(2));
-    con = [con; ceqnew];
-end
-% dynmaics for x_hat
-for k=1:N
-    x_hat_k=x_hat((k-1)*n+1:k*n);
-    x_hat_new=x_hat(k*n+1:(k+1)*n);
-    %controller u_hat=K*(x_bar-x_hat)+u_bar
-    u_bar_k=u_bar((k-1)*m+1:k*m);
-    x_bar_k=x_bar((k-1)*n+1:k*n);
-    u_hat_k=controller_K(u_bar_k,x_bar_k(1),x_bar_k(2))*(x_hat_k-x_bar_k)+u_bar_k;
-    %dynamic constraint
-    ceqnew=x_hat_new-system_f(theta_hat(1),theta_hat(2),u_hat_k,x_hat_k(1),x_hat_k(2));
-    con = [con; ceqnew];
-end
-%dynamic s and upper bound w
-con_s=[];
-con_w=[];
-for k=1:N
-    x_bar_k=x_bar((k-1)*n+1:k*n);
-    s_k=s((k-1)+1:k);
-    s_new=s(k+1:(k+1));
-    w_k=w((k-1)*m+1:k*m);
-    %Upper bound on the uncertainty
-    w_delta_Theta_D = uncertainty_w_deltaThetaD(eta_t,s_k,x_bar_k(1),x_bar_k(2));
-    cineqnew=w_delta_Theta_D-ones(2^p,1)*w_k;
-    con_w = [con_w;  cineqnew];
-    %Dynamic s
-    ceqnew=-s_new+rho_thetat*s_k+w_k;
-    con_s = [con_s;  ceqnew];
-end
-con = [con;con_s;con_w];
-%Constraints
-for k=1:N
-    u_bar_k=u_bar((k-1)*m+1:k*m);
-    x_bar_k=x_bar((k-1)*n+1:k*n);
-    s_k=s((k-1)+1:k);
-    cineqnew=L*[u_bar_k;x_bar_k]-l+c*s_k;
+function [con] = nonlinearconstraints(N, y, n, m,h,theta_bar,theta_hat,eta_t,L_B_rho,rho_thetat,L,l,c,x_s,c_xs,P,p,d_bar,delta_loc)
+    % Introduce the equality constraints also for the terminal state  
+       x_bar=y(1:n*(N+1));
+       x_hat=y(n*(N+1)+1:n*(N+1)+n*(N+1));
+       u_bar=y(n*(N+1)+n*(N+1)+1:n*(N+1)+n*(N+1)+m*N);
+       s=y(n*(N+1)+n*(N+1)+m*N+1:n*(N+1)+n*(N+1)+m*N+N+1);
+       w=y(n*(N+1)+n*(N+1)+m*N+N+1+1:end);
+       con = [];
+    % dynmaics for x_bar
+    for k=1:N
+        x_bar_k=x_bar((k-1)*n+1:k*n);
+        x_bar_new=x_bar(k*n+1:(k+1)*n);        
+        u_bar_k=u_bar((k-1)*m+1:k*m);
+        %dynamic constraint
+        ceqnew=x_bar_new-system_f(theta_bar(1),theta_bar(2),u_bar_k,x_bar_k(1),x_bar_k(2));
+        con = [con; ceqnew];
+    end
+    % dynmaics for x_hat
+    for k=1:N
+        x_hat_k=x_hat((k-1)*n+1:k*n);
+        x_hat_new=x_hat(k*n+1:(k+1)*n);
+        %controller u_hat=K*(x_bar-x_hat)+u_bar
+        u_bar_k=u_bar((k-1)*m+1:k*m);
+        x_bar_k=x_bar((k-1)*n+1:k*n);
+        u_hat_k=controller_K(u_bar_k,x_bar_k(1),x_bar_k(2))*(x_hat_k-x_bar_k)+u_bar_k;
+        %dynamic constraint
+        ceqnew=x_hat_new-system_f(theta_hat(1),theta_hat(2),u_hat_k,x_hat_k(1),x_hat_k(2));
+        con = [con; ceqnew];
+    end
+    %dynamic s and upper bound w
+    con_s=[];
+    con_w=[];
+    for k=1:N
+        x_bar_k=x_bar((k-1)*n+1:k*n);
+        s_k=s((k-1)+1:k);
+        s_new=s(k+1:(k+1));
+        w_k=w((k-1)*m+1:k*m);
+        %Upper bound on the uncertainty
+        w_Theta = uncertainty_w_Theta(eta_t,x_bar_k(1),x_bar_k(2));
+        
+        cineqnew=10^5*(max(w_Theta)^2-w_k^2);
+        con_w = [con_w;  cineqnew];
+        %Dynamic s
+        w_delta_Theta_D=w_k+(eta_t*L_B_rho)*s_k+d_bar;
+        ceqnew=-s_new+rho_thetat*s_k+w_delta_Theta_D;
+        con_s = [con_s;  ceqnew];
+    end
+    con = [con;con_s;con_w];
+    %Constraints
+    for k=1:N
+        u_bar_k=u_bar((k-1)*m+1:k*m);
+        x_bar_k=x_bar((k-1)*n+1:k*n);
+        s_k=s((k-1)+1:k);
+        cineqnew=L*[u_bar_k;x_bar_k]-l+c*s_k;
+        con = [con; cineqnew];
+    end
+    %Terminal set
+    x_bar_N=x_bar(end-n+1:end);
+    s_N=s(end);
+    cineqnew=(x_bar_N-x_s).'*P*(x_bar_N-x_s)-(c_xs-s_N)^2;
     con = [con; cineqnew];
-end
-%Terminal set
-x_bar_N=x_bar(end-n+1:end);
-s_N=s(end);
-cineqnew=sqrt((x_bar_N-x_s).'*P*(x_bar_N-x_s)+eps)+s_N-c_xs;
-con = [con; cineqnew];
+    cineqnew=s_N-delta_loc;
+    con = [con; cineqnew];
 end
 
 
