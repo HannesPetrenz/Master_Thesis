@@ -11,11 +11,10 @@ syms s
 n=2;
 m=1;
 h_value=0.05; %stepsize
-accuracy =6;%12;
+accuracy =12;
 Q = 0.1*eye(n);
 R = eye(m);
 rho = 0.996;
-eps=10^-6;%epsilion for the sqrt derivative. Solves the numerical problem with sqrt optimization
 %% Define the model
 x_1kplus=x_1k+h*(0.5*(1+x_1k)*u_k-x_2k*theta_1);
 x_2kplus=x_2k+h*(0.5*(1-4*x_2k)*u_k+x_1k*theta_2);
@@ -124,7 +123,7 @@ matlabFunction(K,"File","controller_K");
 fprintf("Searching delta_loc\n");
 %delta_loc=22.81;
 delta_loc=sqrt(23.8689);
-accuracy=6;%10;
+accuracy=10;
 [rho_theta0,delta_loc,Psi]=compute_contraction(delta_loc,P,L_x,l_x,L_u,l_u,con_u_lb,con_u_ub,con_x_lb,con_x_ub,accuracy,theta_0);
 %% Compute L_B_rho
  fprintf("Computing L_B_rho\n");
@@ -151,7 +150,7 @@ end
 %% Compute the parameter update gain mu
 fprintf("Compute the parameter update gain mu\n");
 options = optimset('Display','off');
-[test,fval] = fmincon(@(x) 1/getDsq(x),[1;1],...
+[test,fval] = fmincon(@(x)  1/getDsq(x),[1;1],...
     L_x,l_x,[],[],[],[],[],options);
 mu = floor(fval); 
 %% Terminal set
@@ -180,7 +179,7 @@ else
 end
 %Compute the factor c_alpha
 K_s= controller_K(u_s,x_s(1),x_s(2));
-c_alpha=min(eig(Q+K_s.'*R*K_s))/((1-(rho_theta0+L_theta0)^2)*max(eig(P)));
+c_alpha=max(eig(Q+K_s.'*R*K_s))/((1-(rho_theta0+L_theta0)^2)*min(eig(P)));
 %% Compute the function for the uncertainty discription 
 w_Theta =[];
 for j=1:size(B_p.V,1)
@@ -191,7 +190,7 @@ end
 matlabFunction(w_Theta, "File", "uncertainty_w_Theta");
 %% Save the parameter
 Y_0=value(Y_0);Y_1=value(Y_1);Y_2=value(Y_2);Y_3=value(Y_3);Y_4=value(Y_4);Y_5=value(Y_5);Y_6=value(Y_6);Y_7=value(Y_7);Y_8=value(Y_8);Y_9=value(Y_9);
-save("Parameter_Offline.mat","P","n","m","h_value","Q","R","rho_theta0","delta_loc","mu","c","c_xs","c_alpha","Theta_0","eta_0","theta_0","L","l","x_s","u_s","D","d_bar","L_B_rho","eps","B_p","Y_0","Y_1","Y_2","Y_3","Y_4","Y_5","Y_6","Y_7","Y_8","Y_9")
+save("Parameter_Offline.mat","P","n","m","h_value","Q","R","rho_theta0","delta_loc","mu","c","c_xs","c_alpha","Theta_0","eta_0","theta_0","L","l","x_s","u_s","D","d_bar","L_B_rho","B_p","Y_0","Y_1","Y_2","Y_3","Y_4","Y_5","Y_6","Y_7","Y_8","Y_9")
 %% Help functions
 function compute_jacobian(f,x,u)
 A=jacobian(f,x);

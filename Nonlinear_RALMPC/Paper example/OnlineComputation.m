@@ -15,8 +15,7 @@ N=12;
 % make symbolic x_bar x_hat u_bar s w  (n*(N+1)+n*(N+1)+m*N+(N+1)+2^p*N)
 y=MX.sym('y',n*(N+1)+n*(N+1)+m*N+(N+1)+N);
 % Number of MPC iterations
-mpciterations = 1000;
-c_alpha=671.9418;
+mpciterations = 100;
 %% Other Optimization Options
 options = optimset('Display','none',...
     'TolFun', 1e-10,...
