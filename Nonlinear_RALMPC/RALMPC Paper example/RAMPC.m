@@ -1,43 +1,5 @@
-clc
-clear
-close all
-%% Load offline computed parameter
-load("Parameter_Offline.mat")
-p=2;
-r=6;
-HB_p = [1, 0; -1,0;0,1;0,-1];
-hB_p = [1; 1;1;1];
-B_p = Polyhedron(HB_p, hB_p);
-%% Declare MPC Parameter
+function  [X,U,J,X_hat_OL,X_bar_OL,U_bar_OL,S_OL,Theta_HC,theta_bar,theta_hat,eta,rho_theta,t_cpu,Delta]=RAMPC(x0,x_s, u_s, Q, R,P,delta_loc,c_xs,c_alpha,Theta_HC0,theta_star,theta_bar0,theta_hat0,eta_0,rho_theta0,L_B_rho,d_bar,L,l,Delta,D,options,mu,B_p,p,r,N,mpciterations,m,n,c)
 import casadi.*
-% Prediction horizon
-N=12;
-% make symbolic x_bar x_hat u_bar s w  (n*(N+1)+n*(N+1)+m*N+(N+1)+2^p*N)
-y=MX.sym('y',n*(N+1)+n*(N+1)+m*N+(N+1)+N);
-% Number of MPC iterations
-mpciterations = 100;
-%% Other Optimization Options
-options = optimset('Display','none',...
-    'TolFun', 1e-10,...
-    'MaxIter', 1000,...
-    'TolConSQP', 1e-8);
-%% Other Parameters
-x0=[0.1;0.1];
-theta_star=[1;1];
-%For plotting the ellipses
-[eig_U, eig_D] = eig(P);
-theta_circle = linspace(0, 2*pi, 100);
-circle = [cos(theta_circle); sin(theta_circle)];
-%% MPC Initialization
-%nonlinear constraints 
-[con] = nonlinearconstraints(N, y, n, m,h_value,theta_0,theta_0,eta_0,L_B_rho,rho_theta0,L,l,c,x_s,c_xs,P,p,d_bar,delta_loc);
-con_lb=[zeros(n*(N),1);zeros(n*(N),1);zeros((N),1);zeros((N),1);-inf*ones(r*N,1);-inf*ones(2,1)];
-con_ub=[zeros(n*(N),1);zeros(n*(N),1);zeros((N),1);zeros((N),1);zeros(r*N,1);zeros(2,1)];
-%input constraints: use lb, ub
-lb=[x0;-inf*ones(n*(N),1);x0;-inf*ones(n*(N),1);-inf*ones(m*(N),1);zeros(N+1,1);zeros(N,1)];
-ub=[x0;inf*ones(n*(N),1);x0;inf*ones(n*(N),1);inf*ones(m*(N),1);0;inf*ones((N),1);inf*ones((N),1)];
-% objective function
-obj=costfunction(N, y, x_s, u_s, Q, R,P,n,c_alpha,m);
 %Option for casadi solver
 opts = struct;
 opts.ipopt.tol = 1e-10;
@@ -46,10 +8,22 @@ opts.ipopt.acceptable_tol = 1e-10;
 opts.ipopt.max_iter =5000;
 opts.ipopt.print_level = 0;  % Suppress solver output
 opts.print_time = false;      % Disable timing information
-%Define the problem and the solver
-nlp = struct('x', y, 'f', obj, 'g', con);
-solver = nlpsol('solver', 'ipopt', nlp, opts); %,'file_print_level',5
-
+% make symbolic x_bar x_hat u_bar s w  (n*(N+1)+n*(N+1)+m*N+(N+1)+2^p*N)
+y=MX.sym('y',n*(N+1)+n*(N+1)+m*N+(N+1)+N);
+%nonlinear constraints 
+con_lb=[zeros(n*(N),1);zeros(n*(N),1);zeros((N),1);zeros((N),1);-inf*ones(r*N,1);-inf*ones(2,1)];
+con_ub=[zeros(n*(N),1);zeros(n*(N),1);zeros((N),1);zeros((N),1);zeros(r*N,1);zeros(2,1)];
+%input constraints: use lb, ub
+lb=[x0;-inf*ones(n*(N),1);x0;-inf*ones(n*(N),1);-inf*ones(m*(N),1);zeros(N+1,1);zeros(N,1)];
+ub=[x0;inf*ones(n*(N),1);x0;inf*ones(n*(N),1);inf*ones(m*(N),1);0;inf*ones((N),1);inf*ones((N),1)];
+%Define the requiered variables
+Theta_HC_t=Theta_HC0;
+eta_t=eta_0;
+theta_bar_t=theta_bar0;
+theta_hat_t=theta_bar0;
+rho_theta_t=rho_theta0;
+% objective function
+obj=costfunction(N, y, x_s, u_s, Q, R,P,n,c_alpha,m);
 % Initial guess for input
 L_Theta=eta_0*L_B_rho;
 y_init=[repmat(x0,N+1,1);repmat(x0,N+1,1);zeros(m*N,1)];
@@ -57,37 +31,27 @@ for k=0:N-1
    y_init=[y_init;(1-(rho_theta0+L_Theta)^k)/(1-(rho_theta0+L_Theta))*d_bar+10^-4];
 end
 y_init=[y_init;0;d_bar*ones(N,1)];
-% Set variables for output
-x = [];
-u = [];
-%% Parameter Update Initialization
-M=10;
-theta_bar_t{1}=theta_0;
-theta_hat_t{1}=theta_0;
-Theta_t{1}=Theta_0;
-rho_theta_t{1}=rho_theta0;
-eta_t{1}=eta_0;
-
-for j=1:M
-    Delta{j}=Theta_0;
-end
-%% MPC Algorithm 
-% initilization of measured values
+%initalize more variables
+t=0;
+J{1}=0;
 xmeasure = x0;
-for ii = 1:mpciterations % maximal number of iterations
+tStart = cputime;
+X=[];
+U=[];
+while t<mpciterations
     % Set initial constraint
     lb(1:n)=xmeasure;
     ub(1:n)=xmeasure;
     lb(n*(N+1)+1:n*(N+1)+n)=xmeasure;
     ub(n*(N+1)+1:n*(N+1)+n)=xmeasure;
     % Update the parameter theta_bar and theta_hat
-    if ii>1
-        [theta_bar_t{ii},eta_t{ii},Theta_t{ii},Delta]=get_updatehypercube(xmeasure,x_tminus,u_tminus,theta_bar_t{end},eta_t{end},Theta_0,Theta_t{end},Delta,D,options,B_p,h_value,p);
-        theta_hat_t{ii}=LMSpointestimate(xmeasure,x_tminus,u_tminus,Theta_t{end},theta_hat_t{end},mu,p,options,h_value);
-        rho_theta_t{ii}=rho_theta0+(eta_0-eta_t{end})*L_B_rho;
+    if t>0 
+       [theta_bar_t,eta_t,Theta_HC_t,Delta]=get_updatehypercube(xmeasure,x_tminus,u_tminus,theta_bar_t,eta_t,Theta_HC0,Theta_HC_t,Delta,D,options,B_p,p);
+       theta_hat_t=LMSpointestimate(xmeasure,x_tminus,u_tminus,Theta_HC_t,theta_hat_t,mu,p,options);
+       rho_theta_t=rho_theta0+(eta_0-eta_t)*L_B_rho;
     end
     % Update the constrain set and the optimization problem
-    [con] = nonlinearconstraints(N, y, n, m,h_value,theta_bar_t{end},theta_hat_t{end},eta_t{end},L_B_rho,rho_theta_t{end},L,l,c,x_s,c_xs,P,p,d_bar,delta_loc);
+    [con] = nonlinearconstraints(N, y, n, m,theta_bar_t,theta_hat_t,eta_t,L_B_rho,rho_theta_t,L,l,c,x_s,c_xs,P,p,d_bar,delta_loc);
     nlp = struct('x', y, 'f', obj, 'g', con);
     solver = nlpsol('solver', 'ipopt', nlp, opts);
     %Solve the optimization problem
@@ -99,69 +63,47 @@ for ii = 1:mpciterations % maximal number of iterations
     %check if the solver was succesful
     stats = solver.stats();
     if strcmp(stats.return_status, 'Solve_Succeeded')
-        disp('Optimization was successful!');
+        %disp('Optimization was successful!');
     else
-        disp(['Solver failed with status: ', stats.return_status,'in iteration ',ii]);
+        disp(['Solver failed with status: ', stats.return_status]);
+        t
     end
     %Open loop solution
     y_OL=full(res.x); 
-    X_bar_OL{ii}=reshape(y_OL(1:n*(N+1)),2,[]);
-    X_hat_OL{ii}=reshape(y_OL(n*(N+1)+1:n*(N+1)+n*(N+1)),2,[]);
-    U_bar_OL{ii}=y_OL(n*(N+1)+n*(N+1)+1:n*(N+1)+n*(N+1)+m*N);
-    S_OL{ii}=y_OL(n*(N+1)+n*(N+1)+m*N+1:n*(N+1)+n*(N+1)+m*N+N+1);
+    X_bar_OL{t+1}=reshape(y_OL(1:n*(N+1)),2,[]);
+    X_hat_OL{t+1}=reshape(y_OL(n*(N+1)+1:n*(N+1)+n*(N+1)),2,[]);
+    U_bar_OL{t+1}=y_OL(n*(N+1)+n*(N+1)+1:n*(N+1)+n*(N+1)+m*N);
+    S_OL{t+1}=y_OL(n*(N+1)+n*(N+1)+m*N+1:n*(N+1)+n*(N+1)+m*N+N+1);
+    %Parameter update 
+    Theta_HC{t+1}=Theta_HC_t;
+    theta_bar{t+1}=theta_bar_t;
+    theta_hat{t+1}=theta_hat_t;
+    eta{t+1}=eta_t;
+    rho_theta{t+1}=rho_theta_t;
     %Close Loop
     u_cl=U_bar_OL{end}(1);
-    x=[x,xmeasure];
-    u=[u,u_cl];
+    X=[X,xmeasure];
+    U=[U,u_cl];
     x_tminus=xmeasure;
     u_tminus=u_cl;
-    xmeasure=simulation(x(:,end),u_cl,theta_star,D,h_value,n);
+    xmeasure=simulation(X(:,end),u_cl,theta_star,D,n);
     %New initial solution for the optimization
     u_init = controller_K(u_s,x_s(1),x_s(2))*(X_bar_OL{end}(:,end)-x_s)+u_s;
-    x_init = system_f(theta_bar_t{end}(1),theta_bar_t{end}(2),u_init,X_bar_OL{end}(1,end),X_bar_OL{end}(2,end));
-    s_init=rho_theta_t{end}*S_OL{end}(end)+eta_t{end}*L_B_rho*S_OL{end}(end)+d_bar+max(uncertainty_w_Theta(eta_t{end},X_bar_OL{end}(1,end),X_bar_OL{end}(2,end)));
-    w_init=max(uncertainty_w_Theta(eta_t{end},X_bar_OL{end}(1,end),X_bar_OL{end}(2,end)));
+    x_init = system_f(theta_bar{end}(1),theta_bar{end}(2),u_init,X_bar_OL{end}(1,end),X_bar_OL{end}(2,end));
+    s_init=rho_theta{end}*S_OL{end}(end)+eta{end}*L_B_rho*S_OL{end}(end)+d_bar+max(uncertainty_w_Theta(eta{end},X_bar_OL{end}(1,end),X_bar_OL{end}(2,end)));
+    w_init=max(uncertainty_w_Theta(eta{end},X_bar_OL{end}(1,end),X_bar_OL{end}(2,end)));
     y_init=[y_OL(n+1:n*(N+1));x_init;y_OL(n*(N+1)+n+1:n*(N+1)+n*(N+1));x_init;y_OL(n*(N+1)+n*(N+1)+m+1:n*(N+1)+n*(N+1)+m*N);u_init;y_OL(n*(N+1)+n*(N+1)+m*N+1+1:n*(N+1)+n*(N+1)+m*N+N+1);s_init;y_OL(n*(N+1)+n*(N+1)+m*N+N+1+1+1:end);w_init];
+    %Compute cost function
+    J{end+1}=J{end}+x_tminus'*Q*x_tminus+u_tminus'*R*u_tminus;
+    %Next step
+    t=t+1;
 end
-%% Plot
-figure(1); hold on; axis equal;grid on;
-plot([-0.1, 0.1, 0.1, -0.1, -0.1], [-0.1, -0.1, 0.1, 0.1, -0.1], 'k-', 'LineWidth', 2);
-%Plot Open Loop solution
-for ii=1:mpciterations
-   plot(X_bar_OL{ii}(1,:),X_bar_OL{ii}(2,:))
-   plot(X_bar_OL{ii}(1,:), X_bar_OL{ii}(2,:), 'ro', 'MarkerFaceColor', 'r'); % Center point
-   if ii==1 || mod(ii,20)==0  
-       for i=1:length(S_OL{ii})
-            A_trans = eig_U * sqrt(inv(eig_D))*(S_OL{ii}(i));
-            ellipse = A_trans * circle + X_bar_OL{ii}(:,i);
-            plot(ellipse(1,:), ellipse(2,:), 'b', 'LineWidth', 2);
-            
-       end
-       A_trans = eig_U * sqrt(inv(eig_D)) * (c_xs-S_OL{ii}(end));
-       ellipse = A_trans * circle + x_s;
-       plot(ellipse(1,:), ellipse(2,:), 'b', 'LineWidth', 3);
-       plot(x_s(1), x_s(2), 'ro', 'MarkerFaceColor', 'r'); % Center point
-   end
+t_cpu = cputime - tStart;
 end
-xlabel("x_{1,OL}")
-ylabel("x_{2,OL}")
-figure(2)
-plot(linspace(0,mpciterations*h_value,mpciterations),x(1,:))
-grid on
-xlabel("time steps")
-ylabel("x_{1,cl}")
-figure(3)
-plot(x(1,:),x(2,:))
-grid on
-xlabel("x_{1,cl}")
-ylabel("x_{2,cl}")
-figure(4)
-plot(linspace(0,mpciterations*h_value,mpciterations),u)
-grid on
-xlabel("time steps")
-ylabel("u_{cl}")
-%% MPC Help functions
-function [con] = nonlinearconstraints(N, y, n, m,h,theta_bar,theta_hat,eta_t,L_B_rho,rho_thetat,L,l,c,x_s,c_xs,P,p,d_bar,delta_loc)
+
+
+%% Help functions
+function [con] = nonlinearconstraints(N, y, n, m,theta_bar,theta_hat,eta_t,L_B_rho,rho_thetat,L,l,c,x_s,c_xs,P,p,d_bar,delta_loc)
     % Introduce the equality constraints also for the terminal state  
        x_bar=y(1:n*(N+1));
        x_hat=y(n*(N+1)+1:n*(N+1)+n*(N+1));
@@ -261,13 +203,13 @@ function cost = terminalcosts(x, x_eq, P,c_alpha)
     cost = (x-x_eq)'*P*(x-x_eq)*c_alpha;
 end
 
-function x_kplus=simulation(x_k,u_k,theta_star,D,h,n)
+function x_kplus=simulation(x_k,u_k,theta_star,D,n)
     w = D.V(1,:)';
     disturbance=(1-2*rand(n,1)).*w;
     x_kplus=system_f(theta_star(1),theta_star(2),u_k,x_k(1),x_k(2))+disturbance;
 end
 
-function [theta_bar_t,eta_t,Theta_HC_t,Delta]=get_updatehypercube(xmeasure,x_tminus,u_tminus,theta_bar_t,eta_t,Theta_HC0,Theta_HC_t,Delta,D,options,B_p,h_value,p)
+function [theta_bar_t,eta_t,Theta_HC_t,Delta]=get_updatehypercube(xmeasure,x_tminus,u_tminus,theta_bar_t,eta_t,Theta_HC0,Theta_HC_t,Delta,D,options,B_p,p)
     %This function updates the hypercube with Algorithm 1
     Theta_HC_tminus=Theta_HC_t;
     eta_tminus = eta_t;
@@ -315,7 +257,7 @@ function [theta_bar_t,eta_t,Theta_HC_t,Delta]=get_updatehypercube(xmeasure,x_tmi
     Theta_HC_t=theta_bar_t+eta_t*B_p;
 end
 
-function theta_hat_t=LMSpointestimate(xmeasure,x_tminus,u_tminus,Theta_HC_t,theta_hat_t,mu,p,options,h_value)
+function theta_hat_t=LMSpointestimate(xmeasure,x_tminus,u_tminus,Theta_HC_t,theta_hat_t,mu,p,options)
 %This function performs the point estimate
     theta_hat_tminus=theta_hat_t;
     %predicted state

@@ -341,8 +341,8 @@ end
 function [SS,Q_func,L]=get_updateSampleSet(SS,Q_func,X_bar_cell,J_wc_cell,V_OL_cell,S_OL_cell,Q_func_init,SS_init)
     %This function updates the Sample set and Q_fun
     for i=1:length(X_bar_cell)
-        SS=[SS,[X_bar_cell{1}(:,2:end-1);S_OL_cell{1}(2:end-1)';V_OL_cell{1}(:,2:end)]];
-        Q_func=[Q_func,J_wc_cell{1}(2:end)];
+        SS=[SS,[X_bar_cell{i}(:,2:end-1);S_OL_cell{i}(2:end-1)';V_OL_cell{i}(:,2:end)]];
+        Q_func=[Q_func,J_wc_cell{i}(2:end)];
     end
     convexhull=true;
     if convexhull 
