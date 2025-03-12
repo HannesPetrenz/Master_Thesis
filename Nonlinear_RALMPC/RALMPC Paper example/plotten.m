@@ -415,49 +415,287 @@ print('-dpdf', '/Users/hannes/Documents/MATLAB/Master_Thesis/Nonlinear_RALMPC/RA
 print('-depsc', '/Users/hannes/Documents/MATLAB/Master_Thesis/Nonlinear_RALMPC/RALMPC Paper example/Plots/PaperPlot_Theta.eps');
 
 disp('PaperPlot_Theta.pdf and PaperPlot_Theta.eps');
-%% Additional Plot
+
+
+%% Plot: Compare the cost over the iteration
+figure;
+
+% Find the index of iteration N=12
+index = find(Numberofiteration == 12);
+
+J_RALMPC_iteration = J_RALMPC_N_all{index}; % Extract cost values
+J_values=[];
+for i=1:length(J_RALMPC_N_all{index})
+    J_values = [J_values,J_RALMPC_N_all{index}{i}{end}]; % Convert to numerical array
+end
+% Define initial cost (assuming it is known or the first value)
+initialCost = J_values(1); 
+
+% Define optimal cost (assumed known, replace with actual value)
+optimalCost = J_OS{end}; % Replace with actual optimal cost
+
+% Total number of bars
+numBars = length(J_values);
+
+% Select the first 4 and the last value
+selectedIndices = [1:2, numBars]; % Take first 4 and last
+selectedValues = J_values(selectedIndices);
+
+% Add initial cost at x = 0
+xPositions = [0, 1:2, 3.5, 5];  % Position 5.5 is where we place "..."
+%xPositions = [0, 1:4, 5.5, 7];  % Position 5.5 is where we place "..."
+xLabels = ["Initial", string(1:4), "...", string(numBars)]; % Labels with dots in the gap
+barValues = [J_inital, selectedValues]; % Include initial cost
+
+% Create a bar plot (excluding dots)
+b = bar(xPositions([1, 2:3, 5]), barValues, 'FaceColor', 'flat'); % Enable color assignment
+%b = bar(xPositions([1, 2:5, 7]), barValues, 'FaceColor', 'flat'); % Enable color assignment
+b.CData = compColor; % Assign colors to bars
+
+% Adjust x-ticks and labels
+xticks(xPositions);
+xticklabels(xLabels);
+
+% Set axis limits and grid
+
+grid on;
+
+% Add a horizontal line for the optimal cost (colorblind-friendly)
+yline(J_OS{end}, '--', 'Optimal Cost', 'Color', '#0072B2', ...
+    'Interpreter', 'latex', 'FontSize', 12, 'LineWidth', 2);
+
+% Add labels and title
+xlabel('Iteration', 'Interpreter', 'latex', 'FontSize', 14);
+ylabel('Cost', 'Interpreter', 'latex', 'FontSize', 14);
+
+% Improve appearance
+set(gca, 'FontSize', 12, 'TickLabelInterpreter', 'latex');
+
+% Export as PDF and EPS for LaTeX
+set(gcf, 'PaperPositionMode', 'auto');
+print('-dpdf', '/Users/hannes/Documents/MATLAB/Master_Thesis/Nonlinear_RALMPC/RALMPC Paper example/Plots/PaperPlot_Costiteration.pdf');
+print('-depsc', '/Users/hannes/Documents/MATLAB/Master_Thesis/Nonlinear_RALMPC/RALMPC Paper example/Plots/PaperPlot_Costiteration.eps');
+
+disp('PaperPlot_Costiteration.pdf and PaperPlot_Costiteration.eps');
+%% Additional plot 
 figure;
 hold on;
-index = find(Numberofiteration == 12);
-h=1;
-% Extract the state for RALMPC and RAMPC iterations
-X_RALMPC_OL_iteration = X_RALMPC_OL_N{index}{1};
-S_RALMPC_OL_iteration = S_RALMPC_OL_N{index}{1};
+grid on;
 
-X_RALMPC_OL_h=X_RALMPC_OL_iteration{h};
-S_RALMPC_OL_h=S_RALMPC_OL_iteration{h};
 % Define colorblind-friendly colors
-Polyhedron_Color = [0.8, 0.8, 1];  % Light blue for polyhedron (excluded from legend)
-X_Init_Color = [0.2, 0.2, 0.8];    % Dark blue for initial trajectory
+Polyhedron_Color = [0.9, 0.9, 1.0];   % Light blue for polyhedron
+X_Init_Color = [0, 0.45, 0.74];       % Deep blue for initial trajectory
 
-RALMPC_Color = [0.6, 0.8, 0.2]; % Light Green (RALMPC First Iteration)
+% Generate a colormap for different horizons
+num_horizons = size(Numberofiteration, 2);
+horizon_colors = lines(num_horizons); % Use distinct colors
 
-
-% Plot the Polyhedron constraints (EXCLUDED from the legend)
-numberpoints=100;
+% Plot Polyhedron constraints (EXCLUDED from legend)
+numberpoints = 100;
 for k = 1:length(X_bar_inital)
     X_ellipse = pointsellipse(P, X_bar_inital(:, k), S_inital(k), numberpoints);
     h = patch(X_ellipse(1, :), X_ellipse(2, :), Polyhedron_Color, ...
         'EdgeColor', 'k', 'LineStyle', '--', 'LineWidth', 1.5, ...
-        'FaceAlpha', 0.3); % Adjust transparency
+        'FaceAlpha', 0.3); % Semi-transparent
     set(get(get(h, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off'); % Exclude from legend
 end
 
 % Plot initial trajectory (X_bar_initial)
-plot(X_bar_inital(1,:), X_bar_inital(2,:), 'LineWidth', 2, 'Marker', '.', 'MarkerSize', 20, 'Color', X_Init_Color, 'DisplayName', 'Initial Trajectory');
+plot(X_bar_inital(1,:), X_bar_inital(2,:), '-', 'LineWidth', 2, ...
+     'Marker', 'o', 'MarkerSize', 6, 'Color', X_Init_Color, 'DisplayName', 'Initial Trajectory');
 
-% Plot the Polyhedron constraints (EXCLUDED from the legend)
-numberpoints=100;
-for k = 1:length(X_RALMPC_OL_h)
-    X_ellipse = pointsellipse(P, X_RALMPC_OL_h(:, k), S_RALMPC_OL_h(k), numberpoints);
-    h = patch(X_ellipse(1, :), X_ellipse(2, :), Polyhedron_Color, ...
-        'EdgeColor', 'k', 'LineStyle', '--', 'LineWidth', 1.5, ...
-        'FaceAlpha', 0.3); % Adjust transparency
-    set(get(get(h, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off'); % Exclude from legend
+% Iterate over different horizon lengths for RAMPC trajectories
+for index = 1:num_horizons
+    N_value = Numberofiteration(index); % Get corresponding horizon value
+    plot(X_RALMPC_N_{index}{end}(1,:), X_RALMPC_N_{index}{end}(2,:), '--', ...
+        'LineWidth', 2, 'Color', horizon_colors(index, :), ...
+        'DisplayName', sprintf('RAMPC (N = %d)', N_value));
 end
-% Plot RAMPC trajectory
-plot(X_RALMPC_OL_h(1,:), X_RALMPC_OL_h(2,:), '--', 'LineWidth', 2, 'DisplayName', 'RAMPC', 'Color', RAMPC_Color);
- 
+% Define rectangle limits
+x1_min = -0.1; x1_max = 0.1;
+x2_min = -0.1; x2_max = 0.1;
+
+% Compute width and height
+width = x1_max - x1_min;
+height = x2_max - x2_min;
+
+% Draw the rectangle (black color, thicker line, not in legend)
+rectangle('Position', [x1_min, x2_min, width, height], 'EdgeColor', 'k', 'LineWidth', 2.5, 'HandleVisibility', 'off');
+
+% Set axis limits
+xlim([-0.1, 0.1]); 
+ylim([-0.1, 0.1]);
+
+% Improve axes labels and legend
+xlabel('x_1', 'FontSize', 12, 'FontWeight', 'Bold');
+ylabel('x_2', 'FontSize', 12, 'FontWeight', 'Bold');
+legend('Location', 'Best', 'FontSize', 10);
+
+% Adjust figure properties
+axis equal;
+set(gca, 'FontSize', 12, 'FontWeight', 'Bold');
+
+hold off;
+
+% Define save directory
+save_dir = '/Users/hannes/Documents/MATLAB/Master_Thesis/Nonlinear_RALMPC/RALMPC Paper example/Plots/';
+
+% Ensure the directory exists
+if ~exist(save_dir, 'dir')
+    mkdir(save_dir);
+end
+
+% Save the plot
+filename = 'comparison_last_trajectories';
+print(gcf, fullfile(save_dir, [filename, '.eps']), '-depsc', '-r300');  
+print(gcf, fullfile(save_dir, [filename, '.pdf']), '-dpdf', '-r300');
+
+
+%% Additional Plot Open Loop vs Closed Loop
+% Define colorblind-friendly colors
+Polyhedron_Color = [0.9, 0.9, 1.0];  % Light blue for polyhedron
+X_Init_Color = [0, 0.45, 0.74];      % Deep blue for initial trajectory
+RALMPC_CL_Color = [0.47, 0.67, 0.19]; % Green for RAMPC closed-loop
+RALMPC_OL_Color = [0.85, 0.33, 0.10]; % Orange for RAMPC open-loop
+
+numberpoints = 100;
+
+for index = 1:size(Numberofiteration, 2)
+    figure;
+    hold on;
+    grid on;
+
+    legend_OL = false; % Flag to ensure Open-Loop is added only once to legend
+
+    % Plot Polyhedron constraints (EXCLUDED from the legend)
+    for k = 1:length(X_bar_inital)
+        X_ellipse = pointsellipse(P, X_bar_inital(:, k), S_inital(k), numberpoints);
+        h = patch(X_ellipse(1, :), X_ellipse(2, :), Polyhedron_Color, ...
+            'EdgeColor', 'k', 'LineStyle', '--', 'LineWidth', 1.5, ...
+            'FaceAlpha', 0.3); % Adjust transparency
+        set(get(get(h, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off'); % Exclude from legend
+    end
+
+    % Plot initial trajectory (X_bar_initial)
+    plot(X_bar_inital(1,:), X_bar_inital(2,:), '-', 'LineWidth', 2, ...
+         'Marker', 'o', 'MarkerSize', 6, 'Color', X_Init_Color, 'DisplayName', 'Initial Trajectory');
+
+    % Plot Open-Loop and Closed-Loop RAMPC
+    for i = 1:length(X_RALMPC_N_{index}{end})
+        % Open-Loop
+        X_RALMPC_OL_iteration = X_RALMPC_OL_N{index}{end}{i};
+        S_RALMPC_OL_iteration = S_RALMPC_OL_N{index}{end}{i};
+
+        % Plot Polyhedron constraints for Open-Loop (EXCLUDED from legend)
+        for k = 1:length(X_RALMPC_OL_iteration)
+            X_ellipse = pointsellipse(P, X_RALMPC_OL_iteration(:, k), S_RALMPC_OL_iteration(k), numberpoints);
+            h = patch(X_ellipse(1, :), X_ellipse(2, :), Polyhedron_Color, ...
+                'EdgeColor', 'k', 'LineStyle', '--', 'LineWidth', 1.5, ...
+                'FaceAlpha', 0.3);
+            set(get(get(h, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off');
+        end
+
+        % Plot Open-Loop trajectory
+        if ~legend_OL
+            h_ol = plot(X_RALMPC_OL_iteration(1,:), X_RALMPC_OL_iteration(2,:), '--', ...
+                'LineWidth', 2, 'Color', RALMPC_OL_Color, 'DisplayName', 'RAMPC Open-Loop');
+            legend_OL = true; % Ensure this only happens once
+        else
+            h_ol = plot(X_RALMPC_OL_iteration(1,:), X_RALMPC_OL_iteration(2,:), '--', ...
+                'LineWidth', 2, 'Color', RALMPC_OL_Color);
+             set(get(get(h_ol, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off'); % Remove from legend
+        end
+    end
+
+    % Plot Closed-Loop trajectory
+    plot(X_RALMPC_N{index}{end}(1,:), X_RALMPC_N{index}{end}(2,:), '-', ...
+        'LineWidth', 2, 'Color', RALMPC_CL_Color, 'DisplayName', 'RAMPC Closed-Loop');
+
+    % Define rectangle limits
+    x1_min = -0.1; x1_max = 0.1;
+    x2_min = -0.1; x2_max = 0.1;
+    
+    % Compute width and height
+    width = x1_max - x1_min;
+    height = x2_max - x2_min;
+    
+    % Draw the rectangle (black color, thicker line, not in legend)
+    rectangle('Position', [x1_min, x2_min, width, height], 'EdgeColor', 'k', 'LineWidth', 2.5, 'HandleVisibility', 'off');
+    
+    % Set axis limits
+    xlim([-0.1, 0.1]); 
+    ylim([-0.1, 0.1]);
+
+    % Improve plot labels and legend
+    xlabel('X Position', 'FontSize', 12, 'FontWeight', 'Bold');
+    ylabel('Y Position', 'FontSize', 12, 'FontWeight', 'Bold');
+
+    % Use actual iteration number from Numberofiteration for title
+    title(sprintf('Open-Loop vs Closed-Loop Trajectories (N = %d)', Numberofiteration(index)), ...
+          'FontSize', 14, 'FontWeight', 'Bold');
+
+    legend('Location', 'Best', 'FontSize', 10);
+    axis equal;
+    set(gca, 'FontSize', 12, 'FontWeight', 'Bold');
+
+    hold off;
+    print(gcf, sprintf('/Users/hannes/Documents/MATLAB/Master_Thesis/Nonlinear_RALMPC/RALMPC Paper example/Plots/open_loop_vs_closed_loop_N_%d.eps', Numberofiteration(index)), '-depsc', '-r300');
+    print(gcf, sprintf('/Users/hannes/Documents/MATLAB/Master_Thesis/Nonlinear_RALMPC/RALMPC Paper example/Plots/open_loop_vs_closed_loop_N_%d.pdf', Numberofiteration(index)), '-dpdf', '-r300');
+end
+
+
+%% Additional Plot Close Loop over the iterations
+% Define colorblind-friendly colors
+Polyhedron_Color = [0.9, 0.9, 1.0];  % Light blue for polyhedron
+X_Init_Color = [0, 0.45, 0.74];      % Deep blue for initial trajectory
+numberpoints = 100;
+
+% Use a set of distinct colors instead of a gradient
+ClosedLoop_Colormap = lines(length(X_RALMPC_N{1})); % Distinct colors
+
+for index = 1:size(Numberofiteration, 2)
+    figure;
+    hold on;
+    grid on;
+
+    % Plot Polyhedron constraints (EXCLUDED from the legend)
+    for k = 1:length(X_bar_inital)
+        X_ellipse = pointsellipse(P, X_bar_inital(:, k), S_inital(k), numberpoints);
+        h = patch(X_ellipse(1, :), X_ellipse(2, :), Polyhedron_Color, ...
+            'EdgeColor', 'k', 'LineStyle', '--', 'LineWidth', 1.5, ...
+            'FaceAlpha', 0.3);
+        set(get(get(h, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off'); % Exclude from legend
+    end
+
+    % Plot initial trajectory
+    plot(X_bar_inital(1,:), X_bar_inital(2,:), '-', 'LineWidth', 2, ...
+         'Marker', 'o', 'MarkerSize', 6, 'Color', X_Init_Color, 'DisplayName', 'Initial Trajectory');
+
+    % Plot Closed-Loop trajectories over iterations with distinct colors
+    for i = 1:length(X_RALMPC_N{index})
+        plot(X_RALMPC_N{index}{i}(1,:), X_RALMPC_N{index}{i}(2,:), '-', ...
+            'LineWidth', 1.5, 'Color', ClosedLoop_Colormap(i, :), ...
+            'DisplayName', sprintf('Iteration %d', i));
+    end
+
+    % Improve plot labels and legend
+    xlabel('X Position', 'FontSize', 12, 'FontWeight', 'Bold');
+    ylabel('Y Position', 'FontSize', 12, 'FontWeight', 'Bold');
+
+    % Use actual iteration number from Numberofiteration for title
+    title(sprintf('Closed-Loop Trajectories Over Iterations (N = %d)', Numberofiteration(index)), ...
+          'FontSize', 14, 'FontWeight', 'Bold');
+    
+    legend('Location', 'Best', 'FontSize', 10);
+    axis equal;
+    set(gca, 'FontSize', 12, 'FontWeight', 'Bold');
+
+    hold off;
+
+    % Save the figure with correct iteration number
+    print(gcf, sprintf('/Users/hannes/Documents/MATLAB/Master_Thesis/Nonlinear_RALMPC/RALMPC Paper example/Plots/closed_loop_iterations_N_%d.eps', Numberofiteration(index)), '-depsc', '-r300');
+    print(gcf, sprintf('/Users/hannes/Documents/MATLAB/Master_Thesis/Nonlinear_RALMPC/RALMPC Paper example/Plots/closed_loop_iterations_N_%d.pdf', Numberofiteration(index)), '-dpdf', '-r300');
+end
 
 %% Help functions
 function ellipse=pointsellipse(P,center,delta,numberpoints)

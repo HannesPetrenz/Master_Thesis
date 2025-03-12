@@ -58,11 +58,12 @@ for i=1:numberitertions
 end
 %% Query
 fprintf("Query: Solve the RALMPC problem\n");
-for j=1:M
-    Delta{j}=Theta_0;
-end
-for N=12:-2:4
+
+for N=10:-2:4
     % RALMPC Algorithm 
+    for j=1:M
+        Delta{j}=Theta_0;
+    end
     SS{1}=SS_inital ;
     Q_func{1}=J_wc_inital;
     fprintf("Iteration:\t%d\n", N);

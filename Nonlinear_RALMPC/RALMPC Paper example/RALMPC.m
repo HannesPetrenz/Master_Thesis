@@ -120,7 +120,7 @@ for h=1:numberitertions
                             %     disp("shit")
                             % end
                             if isempty(idx_infeasible)
-                                idx_infeasible=find(norm(SS_select(1:n,ii)-x_s)>=vecnorm(SS_select(1:n,:)-x_s));
+                                %idx_infeasible=find(norm(SS_select(1:n,ii)-x_s)>=vecnorm(SS_select(1:n,:)-x_s));
                             end
                     elseif strcmp(stats.return_status, 'Maximum_Iterations_Exceeded')
                            %disp(['Solver failed with status: ', stats.return_status]);

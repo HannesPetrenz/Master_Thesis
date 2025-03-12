@@ -206,7 +206,7 @@ J_values = cell2mat(J_RALMPC_iteration); % Convert to numerical array
 initialCost = J_values(1); 
 
 % Define optimal cost (assumed known, replace with actual value)
-optimalCost = 140; % Replace with actual optimal cost
+optimalCost = J_OS; % Replace with actual optimal cost
 
 % Total number of bars
 numBars = length(J_values);
